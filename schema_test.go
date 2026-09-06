@@ -27,6 +27,9 @@ func TestSchemaCommand(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// Terminating stdout with a newline is a text-stream convention, not a
+	// promise about the format: a document's whitespace is not contractual
+	// and consumers compare parsed values.
 	if got, want := out.String()[len(out.String())-1:], "\n"; got != want {
 		t.Errorf("output does not end with a newline: %q", out.String())
 	}

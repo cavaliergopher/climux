@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://static.hotsrc.dev/climux/schema/v1.json",
   "title": "climux description document",
-  "description": "A command tree described by go.hotsrc.dev/climux, at schema version 1. See docs/adr/machine-readable-schema.md for the design this specifies.",
+  "description": "A command tree described by go.hotsrc.dev/climux, at schema version 1. Whitespace and key order are not part of the format: compare parsed values, never bytes. See docs/adr/machine-readable-schema.md for the design this specifies.",
   "type": "object",
   "required": ["schemaVersion", "command"],
   "properties": {

@@ -151,6 +151,17 @@ made for the description alone and not for the Go API: they break for
 different reasons, and the point of the separate package is that an `ir`
 field may be renamed without a document changing.
 
+The promise is over parsed values rather than bytes. Whitespace and key
+order are not part of the format, and a consumer comparing two documents
+— which is what breaking-change detection in CI does — compares what it
+decoded, never the text it received. Making the encoding contractual
+would put a document's layout under the same additive-only promise as its
+content, so reordering two fields in a `desc` struct, or an encoder
+spelling the same value differently, would read as a break while saying
+nothing about the program described. `SchemaCommand` indents its output
+because a person runs it by hand too, and that is a courtesy rather than
+a guarantee.
+
 ### A flag records the kind of value it takes
 
 `ir.Flag` gains a `Kind`, because `Int(&n, ...)` and `String(&s, ...)`
