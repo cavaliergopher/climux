@@ -205,3 +205,30 @@ func TestCompleteFuncSeesEarlierFlag(t *testing.T) {
 		t.Errorf("directive = %v, want %v", got, want)
 	}
 }
+
+// TestCompleteSource covers a CompleteFunc reading where an earlier flag
+// on the line got its value. Completion reads argv and no environment
+// variable, so what it records is what has been typed so far.
+func TestCompleteSource(t *testing.T) {
+	t.Setenv("APP_REPO", "from-env")
+	var seen Source
+	cmd := NewCommand("app", "").Flags(
+		String(new(string), "repo", "", "").Env("APP_REPO"),
+		String(new(string), "branch", "", "").
+			Complete(func(inv *ir.Invocation, word string) ([]string, ir.CompDirective) {
+				seen = inv.Source("repo")
+				return []string{"main"}, ir.CompNoFileComp
+			}),
+	)
+
+	Complete(cmd, []string{"--repo", "origin", "--branch"}, "")
+	if got, want := seen, SourceArgs; got != want {
+		t.Errorf("Source(%q) = %v, want %v", "repo", got, want)
+	}
+
+	seen = SourceArgs
+	Complete(cmd, []string{"--branch"}, "")
+	if got, want := seen, SourceDefault; got != want {
+		t.Errorf("Source(%q) = %v, want %v", "repo", got, want)
+	}
+}

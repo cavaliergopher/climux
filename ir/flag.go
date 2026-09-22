@@ -3,6 +3,7 @@ package ir
 import (
 	"maps"
 	"slices"
+	"sync/atomic"
 
 	"go.hotsrc.dev/climux/desc"
 )
@@ -25,6 +26,30 @@ type Claim struct {
 	Source string
 	Effect string
 }
+
+// An Origin identifies the declaration a compiled flag was lowered from.
+// It is minted where a flag is declared and copied onto every compiled
+// flag lowered from it, so every flag any number of compiles of one
+// declaration produce shares one Origin, and no two declarations ever
+// share one. The zero Origin belongs to no declaration, and is what a
+// flag assembled by hand rather than lowered from one carries.
+//
+// This package mints none and reads none. It carries the identity so
+// that a program holding a declaration can find what that declaration
+// compiled to in a tree it did not build; see Invocation.Resolve.
+// Nothing here can name the declaration itself, since the configuration
+// types that declare flags live in the package that imports this one.
+type Origin uint64
+
+// lastOrigin is the last identity NewOrigin handed out. It counts
+// declarations rather than describing any one tree, which is why a
+// package modeling what a program means keeps a counter at all.
+var lastOrigin atomic.Uint64
+
+// NewOrigin returns an Origin distinct from every other, to stamp on a
+// flag declaration. climux's flag constructors call it; nothing reading a
+// compiled tree needs to.
+func NewOrigin() Origin { return Origin(lastOrigin.Add(1)) }
 
 // Flag is the compiled, implementation form of a command line flag or
 // positional argument, produced by lowering a configuration tree with
@@ -128,6 +153,12 @@ type Flag struct {
 	// CompleteFunc, if set, completes the flag's value for a shell. See
 	// climux.Complete.
 	CompleteFunc CompleteFunc
+
+	// Origin identifies the declaration this flag was lowered from, and
+	// is zero for a flag built by hand rather than lowered from one. It is
+	// written once, while lowering, and never afterwards: it says where
+	// the flag came from, not what has been done to it. See Origin.
+	Origin Origin
 
 	// Handler, if set, makes the flag an interrupt: naming it on the
 	// command line ends the parse there and runs this in place of the

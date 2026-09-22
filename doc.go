@@ -101,6 +101,55 @@ Flags may then be used directly.
 	fmt.Println("ip has value ", ip)
 	fmt.Println("flagvar has value ", flagvar)
 
+# Where a value came from
+
+A variable a flag is bound to says what the flag holds, never how it came to
+hold it: a flag nobody named holds the default its constructor gave it, and a
+flag named with that same value looks identical afterwards. Where the answer
+matters -- a flag that means something different for being given at all, or a
+report that says which setting the operator actually chose -- ask the
+invocation.
+
+	func MyAppHandler(ctx context.Context, inv *climux.Invocation) error {
+		if inv.IsSet("output") {
+			// The operator chose a format; honor it as given.
+		}
+		fmt.Fprintln(inv.Stdout, "output came from", inv.Source("output"))
+		return nil
+	}
+
+Source reports one of three answers -- SourceArgs, SourceEnv or SourceDefault
+-- in the precedence the parser applies them: the command line wins over a
+flag's environment variable, which wins over its default. IsSet is the
+yes-or-no form, true for either of the first two. Both take a flag's declared
+name, undecorated: "output" rather than "--output".
+
+A program that keeps its declarations in variables asks them instead, which
+costs no name at all:
+
+	var (
+		outputFlag   = climux.String(&output, "output", "", "Output format")
+		templateFlag = climux.String(&template, "template", "", "Go template")
+	)
+
+	func MyAppHandler(ctx context.Context, inv *climux.Invocation) error {
+		// --template picks the format, but only if -o did not.
+		if template != "" && !outputFlag.IsSetIn(inv) {
+			output = "go-template"
+		}
+		return nil
+	}
+
+Flag.IsSetIn and Flag.SourceIn answer the same two questions as the invocation's
+own, and answer them better: a name is unique only along one command path, so
+two sibling commands may both declare "force" and the name form reports
+whichever is in scope. A declaration answers for itself or for nothing, and
+Flag.InScope is what says which.
+
+A source belongs to one reading of one command line rather than to the flag
+itself, so it is the invocation that carries it and nothing about the flag
+changes. See Invocation.Sources for the whole record.
+
 # Help and version
 
 Command.HelpFlag adds the flag that prints a command's help message,

@@ -24,12 +24,16 @@ func Complete(cmd *ir.Command, args []string, word string) ([]string, ir.CompDir
 
 	var forwarded []string
 	var forwardedArgs bool
+	sources := make(map[*ir.Flag]ir.Source)
 	for _, instr := range res.instructions {
 		switch instr.kind {
 		case instSet:
 			// Best-effort: a value a CompleteFunc would reject outright is
 			// still worth setting, since completion is not validation.
 			_ = instr.flag.Set(instr.value)
+			// Recorded even when Set failed, for the same reason: what the
+			// line named is what a CompleteFunc is completing against.
+			sources[instr.flag] = ir.SourceArgs
 		case instForward:
 			forwarded = instr.forwarded
 			forwardedArgs = true
@@ -46,7 +50,9 @@ func Complete(cmd *ir.Command, args []string, word string) ([]string, ir.CompDir
 		return nil, ir.CompDefault
 	}
 
-	inv := invocationFor(res.active, forwarded, nil)
+	// No environment variable is read here, so nothing a CompleteFunc
+	// sees reports ir.SourceEnv: completion answers what has been typed.
+	inv := invocationFor(res.active, forwarded, nil, sources)
 
 	cands, dir := completeCandidates(res, res.active.Ancestry, inv, word)
 	return finalizeCandidates(cands, word), dir

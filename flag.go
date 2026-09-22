@@ -61,6 +61,12 @@ type Flag struct {
 	// handlerFunc is what an interrupt runs, and is nil for every flag
 	// that binds a value instead. See Interrupt.
 	handlerFunc HandlerFunc
+
+	// origin is this declaration's identity, minted once here and copied
+	// onto every compiled flag lowered from it, which is what lets
+	// SourceIn find this declaration's flag in a compiled tree without
+	// going by name. See ir.Origin.
+	origin ir.Origin
 }
 
 // Var returns a Flag that can be used to define a command line flag with
@@ -75,6 +81,7 @@ type Flag struct {
 // precisely as a typed constructor such as String or Int already does.
 func Var(value ir.Value, name, usage string) *Flag {
 	return &Flag{
+		origin:   ir.NewOrigin(),
 		names:    []string{name},
 		usage:    usage,
 		minCount: defaultMinNArgs,
@@ -232,6 +239,7 @@ func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
 // VersionFlag for the two every program tends to want.
 func Interrupt(name, usage string, fn HandlerFunc) *Flag {
 	return &Flag{
+		origin:      ir.NewOrigin(),
 		names:       []string{name},
 		usage:       usage,
 		minCount:    defaultMinNArgs,
@@ -417,6 +425,45 @@ func (c *Flag) Complete(fn ir.CompleteFunc) *Flag {
 	return c
 }
 
+// SourceIn reports where the value this flag held during inv came from:
+// SourceArgs if the command line set it, SourceEnv if the flag's
+// environment variable did, and SourceDefault if neither did and it still
+// held what it was constructed with.
+//
+//	if template != "" && !outputFlag.IsSetIn(inv) {
+//	    output = "go-template"
+//	}
+//
+// It finds the flag by the declaration rather than by its name, so a flag
+// of the same name in another subtree can never answer for it. A flag
+// that was not in scope for inv at all reports SourceDefault, which is
+// the one answer worth asking InScope about.
+//
+// An interrupt reports SourceArgs when it is the flag that ended the
+// parse. It binds no value, so that is the whole of what it has to say.
+func (c *Flag) SourceIn(inv *Invocation) Source {
+	flag := inv.Resolve(c.origin)
+	if flag == nil {
+		return SourceDefault
+	}
+	return inv.Sources[flag]
+}
+
+// IsSetIn reports whether the command line or the environment set this
+// flag during inv, rather than leaving it the default it was constructed
+// with. It is SourceIn(inv) != SourceDefault.
+func (c *Flag) IsSetIn(inv *Invocation) bool {
+	return c.SourceIn(inv) != SourceDefault
+}
+
+// InScope reports whether this flag was one inv could have been given:
+// whether the command inv named, or an ancestor of it, declared it. It is
+// what tells a flag nothing set from a flag the command line could not
+// have named at all, which SourceIn answers alike.
+func (c *Flag) InScope(inv *Invocation) bool {
+	return inv.Resolve(c.origin) != nil
+}
+
 // lower returns the compiled ir.Flag for c: its data fields copied
 // across, its names decorated the way the command line writes them, with
 // TakesValue derived from whether its Value is a BoolValue, and its
@@ -440,6 +487,7 @@ func (c *Flag) lower(errs *[]error) *ir.Flag {
 	namedOptions, claimedOptions := argv.OptionsFor(c.names, c.positional, takesValue, c.handlerFunc != nil)
 	valueName := argv.ValueNameFor(canonicalName(c.names), c.valueName, c.positional, takesValue)
 	flag := &ir.Flag{
+		Origin:         c.origin,
 		NamedOptions:   namedOptions,
 		ClaimedOptions: claimedOptions,
 		Name:           canonicalName(c.names),

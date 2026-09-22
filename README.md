@@ -74,6 +74,27 @@ path it was reached by, and anything after a `--` terminator. A command is
 usually mounted by whoever composes the binary rather than by the team that
 wrote it, so its own path is not something it can know until it runs.
 
+It also says where each flag's value came from, which the bound variable
+cannot: a flag nobody named holds its default, and a flag named with that same
+value looks identical afterwards. `inv.IsSet("output")` is the yes-or-no form,
+and `inv.Source("output")` names the source — `SourceArgs`, `SourceEnv` or
+`SourceDefault`, in the precedence the parser applies them.
+
+A program that keeps its declarations in variables asks them instead, and needs
+no name — which also settles the case the name form cannot, where two sibling
+commands both declare `--force`:
+
+```go
+var outputFlag = climux.String(&output, "output", "", "Output format")
+
+func Deploy(ctx context.Context, inv *climux.Invocation) error {
+	if template != "" && !outputFlag.IsSetIn(inv) {
+		output = "go-template" // --template picks the format nobody asked for
+	}
+	...
+}
+```
+
 `Command.Middleware` wraps a command's handler, and every handler beneath it,
 in a function of your own — an authorization check, a timing trace, opening a
 resource and closing it again — written once instead of at the top of every

@@ -15,6 +15,27 @@ import (
 // streams the handler should read and write.
 type Invocation = ir.Invocation
 
+// A Source names where the value a flag holds came from, which is how a
+// handler tells a value the operator typed from the default the program
+// gave the flag. Ask Invocation.Source for one, or Invocation.IsSet for
+// the yes-or-no form.
+type Source = ir.Source
+
+const (
+	// SourceDefault is a flag that neither the command line nor the
+	// environment set, which holds whatever its constructor gave it.
+	SourceDefault = ir.SourceDefault
+
+	// SourceEnv is a flag set from the environment variable it declared,
+	// which happens only where the command line did not set it. See
+	// Flag.EnvVar.
+	SourceEnv = ir.SourceEnv
+
+	// SourceArgs is a flag the command line set, which wins over the
+	// environment.
+	SourceArgs = ir.SourceArgs
+)
+
 // A HandlerFunc runs a command. Register one with Command.HandleFunc.
 //
 // ctx is the context given to Run, so a handler that does anything

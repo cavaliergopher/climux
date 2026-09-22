@@ -79,6 +79,7 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 	active := root
 	scope := []*ir.Command{root}
 	counts := make(map[*ir.Flag]int)
+	sources := make(map[*ir.Flag]ir.Source)
 	var forwarded []string
 	for _, instr := range res.instructions[:limit] {
 		switch instr.kind {
@@ -87,6 +88,7 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 				return nil, err
 			}
 			counts[instr.flag]++
+			sources[instr.flag] = ir.SourceArgs
 		case instDispatch:
 			active = instr.cmd
 			scope = append(scope, active)
@@ -96,18 +98,22 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 	}
 
 	if interruptAt != -1 {
-		return invocationFor(interrupt.cmd, interrupt.forwarded, interrupt.flag), nil
+		// The interrupt binds no value, so nothing Set it, but the
+		// command line named it: recording it is what lets a program ask
+		// whether it was given the same way it asks about any other flag.
+		sources[interrupt.flag] = ir.SourceArgs
+		return invocationFor(interrupt.cmd, interrupt.forwarded, interrupt.flag, sources), nil
 	}
 	if cmdInterrupt {
-		return invocationFor(active, forwarded, nil), nil
+		return invocationFor(active, forwarded, nil, sources), nil
 	}
-	if err := applyEnvVars(scope, counts); err != nil {
+	if err := applyEnvVars(scope, counts, sources); err != nil {
 		return nil, err
 	}
 	if err := validateNArgs(active, scope, counts); err != nil {
 		return nil, err
 	}
-	return invocationFor(active, forwarded, nil), nil
+	return invocationFor(active, forwarded, nil, sources), nil
 }
 
 // setFlag sets f's value to token, wrapping a failure the same way it
@@ -123,14 +129,16 @@ func setFlag(active *ir.Command, f *ir.Flag, token string) error {
 
 // applyEnvVars fills every flag in scope from its environment variable,
 // for whatever counts has no occurrence of yet, then counts it as seen so
-// validateNArgs sees it satisfied.
+// validateNArgs sees it satisfied and records it in sources as having
+// come from the environment. A flag the command line already set is
+// skipped, which is what leaves its recorded source ir.SourceArgs.
 //
 // scope is the commands dispatched through, beginning at the one Parse was
 // called on rather than at the root: a flag an ancestor of that command
 // declares was never matchable, so it is not checked here either. Scope
 // order, then group order, then declaration order within each command:
 // this is deterministic.
-func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int) error {
+func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int, sources map[*ir.Flag]ir.Source) error {
 	for _, cmd := range scope {
 		for _, group := range cmd.FlagGroups {
 			for _, f := range group.Flags {
@@ -145,6 +153,7 @@ func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int) error {
 					return err
 				}
 				counts[f]++
+				sources[f] = ir.SourceEnv
 			}
 		}
 	}
@@ -199,12 +208,17 @@ func validateNArgs(active *ir.Command, scope []*ir.Command, counts map[*ir.Flag]
 // active, naming every command in path from the one Parse was called on to
 // cmd itself.
 //
+// sources is the record of where each flag set along the way got its
+// value, and is handed over rather than copied: apply is done with it by
+// the time it builds the Invocation, and nothing else holds a reference.
+//
 // Its streams are left nil. Streams are process environment, so the entry
 // point holding them fills them in.
-func invocationFor(cmd *ir.Command, forwarded []string, interrupt *ir.Flag) *ir.Invocation {
+func invocationFor(cmd *ir.Command, forwarded []string, interrupt *ir.Flag, sources map[*ir.Flag]ir.Source) *ir.Invocation {
 	return &ir.Invocation{
 		Cmd:       cmd,
 		Forwarded: forwarded,
 		Interrupt: interrupt,
+		Sources:   sources,
 	}
 }

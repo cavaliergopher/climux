@@ -43,6 +43,24 @@ type Invocation struct {
 	// Flag.Handler.
 	Interrupt *Flag
 
+	// Sources records where the value each flag holds came from, for
+	// every flag the command line or the environment set. A flag neither
+	// of them set is absent, still holding what its constructor gave it,
+	// which is what SourceDefault -- the zero value a missing key reads
+	// as -- says of it.
+	//
+	// It is keyed by compiled flag rather than by name, because a name
+	// is unique only along one path; Source and IsSet answer by name,
+	// resolving it against the commands in scope first. It is never nil.
+	//
+	// An interrupt ends the parse where it was given, so what is
+	// recorded then is the flags given before it and nothing after, and
+	// no environment variable at all. The interrupt itself is recorded
+	// as SourceArgs even though it binds no value, because the command
+	// line named it and asking whether it was given is the one question
+	// worth answering about it. See Interrupt.
+	Sources map[*Flag]Source
+
 	// Stdin, Stdout and Stderr are the streams the handler should use in
 	// place of the process streams, so that a caller redirecting a
 	// command captures its output. They are the process streams unless
@@ -52,6 +70,118 @@ type Invocation struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+}
+
+// Lookup returns the flag named name that is in scope for the
+// invocation -- one Cmd or an ancestor of Cmd declared -- or nil when no
+// command on that path declares one. name is a flag's declared name,
+// undecorated by any dialect: "force" rather than "--force".
+//
+// A name may not repeat along a path, so the flag it finds is the only
+// flag that name could mean here; see docs/adr/path-scoped-flag-names.md.
+// A name is not unique across the whole tree, though, so a program
+// holding the declaration itself should ask Resolve instead, which cannot
+// answer about a flag of the same name in another subtree.
+func (inv *Invocation) Lookup(name string) *Flag {
+	return inv.find(func(f *Flag) bool { return f.Name == name })
+}
+
+// Resolve returns the flag in scope for the invocation that was lowered
+// from the declaration o identifies, or nil when no command on the path
+// declared it -- which is the answer for a flag that exists in another
+// subtree, and for the zero Origin. See Origin.
+func (inv *Invocation) Resolve(o Origin) *Flag {
+	if o == 0 {
+		return nil
+	}
+	return inv.find(func(f *Flag) bool { return f.Origin == o })
+}
+
+// find returns the first flag in scope for the invocation that match
+// accepts, or nil. Scope is every command from the root of the tree down
+// to Cmd, in that order, and each command's flag groups in the order it
+// carries them, which is the order everything else reads a command's
+// flags in.
+func (inv *Invocation) find(match func(*Flag) bool) *Flag {
+	for _, cmd := range inv.Cmd.Ancestry {
+		for _, group := range cmd.FlagGroups {
+			for _, f := range group.Flags {
+				if match(f) {
+					return f
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Source reports where the value the flag named name holds came from:
+// SourceArgs if the command line set it, SourceEnv if the flag's
+// environment variable did, and SourceDefault if neither did and it
+// still holds what it was constructed with.
+//
+// A name no command in scope declares reports SourceDefault as well,
+// since nothing set such a flag here either. Lookup is what tells the
+// two apart, and a program asking about a flag it declared itself never
+// has to.
+func (inv *Invocation) Source(name string) Source {
+	f := inv.Lookup(name)
+	if f == nil {
+		return SourceDefault
+	}
+	return inv.Sources[f]
+}
+
+// IsSet reports whether the command line or the environment set the flag
+// named name, rather than leaving it the default it was constructed
+// with. It is Source(name) != SourceDefault, and is what to ask when one
+// flag means something different for another having been given at all --
+// as distinct from that other flag's value, which the program reads from
+// the variable it bound.
+func (inv *Invocation) IsSet(name string) bool {
+	return inv.Source(name) != SourceDefault
+}
+
+// Source names where the value a flag holds came from, which is what
+// tells a value an operator typed from one the program supplied: a
+// command line that never mentions a flag leaves it holding its default,
+// and nothing about the value itself says so afterwards.
+//
+// A source belongs to one reading of one command line rather than to
+// anything the program declared, so it is recorded on the Invocation and
+// not on the Flag; see Invocation.Sources.
+type Source int
+
+const (
+	// SourceDefault is a flag that neither the command line nor the
+	// environment set, which holds whatever its constructor gave it. It
+	// is the zero value, so a flag missing from Invocation.Sources
+	// reports it.
+	SourceDefault Source = iota
+
+	// SourceEnv is a flag set from the environment variable it declared.
+	// That happens only where the command line did not set it; see
+	// climux.Flag.EnvVar.
+	SourceEnv
+
+	// SourceArgs is a flag the command line set, which is the source
+	// that wins over the environment.
+	SourceArgs
+)
+
+// String returns the source as a single lowercase word -- "default",
+// "env" or "args" -- so that a message reporting where a value came from
+// reads as a sentence. A Source outside the three reads as "unknown".
+func (s Source) String() string {
+	switch s {
+	case SourceDefault:
+		return "default"
+	case SourceEnv:
+		return "env"
+	case SourceArgs:
+		return "args"
+	}
+	return "unknown"
 }
 
 // A HandlerFunc handles the invocation of a command specified by command
