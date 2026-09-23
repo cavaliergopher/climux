@@ -1,6 +1,10 @@
 # Configuration types carry no behavior
 
-Status: accepted, 2026-08-29; implemented 2026-08-31.
+Status: accepted, 2026-08-29; implemented 2026-08-31. Revised 2026-09-23 by
+docs/adr/a-flag-holds-its-own-value.md, under which a flag declaration holds
+its own value and so carries state. What survives is the claim that matters:
+a configuration type carries no behavior a parser or a formatter must reach
+through.
 
 ## Context
 

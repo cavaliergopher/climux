@@ -1,6 +1,9 @@
 # Three types per concept, and the ir package
 
-Status: accepted, 2026-08-28.
+Status: accepted, 2026-08-28. Revised 2026-09-23 by
+docs/adr/a-flag-holds-its-own-value.md, which makes the configuration flag
+generic and gives it a runtime half. The three layers and the package
+boundary are unchanged.
 
 ## Context
 
