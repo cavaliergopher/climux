@@ -75,10 +75,11 @@ because the group has real content, which a heading holding only these two
 would not. Either shape is a program's to build, since the constructors are
 exported and a flag goes wherever a program puts it.
 
-Adding the help flag to the root is enough for the whole tree, because an
-ancestor's options stay matchable through a descent: the root's reaches
-every command under it and binds to whichever one was named. A command
-below may add its own, and collides with the root's if one is there.
+Adding the help flag to the root is enough for the whole tree, because
+`HelpFlag` declares a persistent flag: the root's reaches every command
+under it and answers for whichever one was named. A command below may not
+add its own, since the root's is already writable there; see
+`docs/adr/flags-are-local-by-default.md`.
 
 Any flag may interrupt, through `Flag.Interrupt`, and still binds its
 value, so the author chooses what a help flag means by its type. A flag

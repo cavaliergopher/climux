@@ -112,9 +112,10 @@ reading, which stops option processing at the first operand; adopted in
 GNU's, where options may appear anywhere among the operands. This is the
 existing behavior and the one users expect from git and friends. The
 scoping rule qualifies it rather than contradicting it: a flag is legal
-from the point its own command is named onward, so `app --sub-only sub` is
-an error about ordering that no amount of permutation fixes. See
-`docs/adr/path-scoped-flag-names.md`.
+from the point its own command is named until the line dispatches, or
+onward if it is persistent, so `app --sub-only sub` is an error about
+ordering that no amount of permutation fixes. See
+`docs/adr/flags-are-local-by-default.md`.
 
 **Guideline 10 — `--` ends option processing.** Adopted, in the standard's
 own reading, as the default: every argument after `--` is an operand

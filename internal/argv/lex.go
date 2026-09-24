@@ -373,7 +373,7 @@ func (lx *lexer) lexShortOptions(arg string, idx int) {
 // declared deeper in the tree becomes legal only after its own command is
 // named, so when a command below the current one declares it, the message
 // says which rather than leaving the user to guess; see
-// docs/adr/path-scoped-flag-names.md.
+// docs/adr/flags-are-local-by-default.md.
 func (lx *lexer) unrecognizedOption(name string) {
 	if sub := findDescendantWithFlag(lx.cmd, name); sub != nil {
 		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, nil, name,
@@ -477,7 +477,7 @@ func (lx *lexer) emitUnbound(f *ir.Flag, name string, attached bool) {
 // declaration order, or nil when none does. A name declared below the
 // current command is legal only once its own command is named, so
 // unrecognizedOption uses this to say where the name would work; see
-// docs/adr/path-scoped-flag-names.md.
+// docs/adr/flags-are-local-by-default.md.
 //
 // A hidden command, and its whole subtree, is skipped: it is deliberately
 // unadvertised, so the hint must not name it either. The flag stays

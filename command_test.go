@@ -712,7 +712,7 @@ func TestConfigErrorNamesGrandchildByPath(t *testing.T) {
 // TestValidateAncestorShadowing asserts the path-scoped naming rule: one
 // option may not be claimed twice along an ancestor-descendant chain, by
 // either spelling, however far up the path the ancestor is. See
-// docs/adr/path-scoped-flag-names.md.
+// docs/adr/flags-are-local-by-default.md.
 //
 // The error names both commands, since ancestry is what tells a reader
 // which end to change, and neither is called the offender: which was

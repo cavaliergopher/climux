@@ -52,12 +52,12 @@ them on every node.
 The document a program publishes is nonetheless always rooted at
 `Command.Root`. Describing a subtree is legal and says nothing false —
 each node reports the `fullName` it really has — but it is lossy in a way
-worth naming: a flag is in scope from the point its own command is named
-onward, so a command's ancestors hold flags it accepts, and those
-ancestors are not beneath it. A document rooted at a subcommand therefore
+worth naming: an ancestor's persistent flags are in scope beneath it,
+so a command's ancestors hold flags it accepts, and those ancestors are
+not beneath it. A document rooted at a subcommand therefore
 understates what that subcommand takes.
 
-The repair this invites must not be taken. Folding every in-scope
+The repair this invites must not be taken. Folding every persistent
 ancestor flag into each command as it is described would make any subtree
 honest, and it would repeat the root's flags at every level of the tree,
 inflating the whole-binary document for the sake of the one case it is
@@ -386,9 +386,9 @@ and the reader share.
 
 A flattened per-command projection is anticipated and deliberately not
 built. Something calling one command wants that command's calling
-convention — its own flags and every ancestor's, and none of its
-descendants — rather than a document it must read the whole of.
-`Ancestry` already holds the commands whose flags are in scope, so this
+convention — its own flags and every ancestor's persistent ones, and
+none of its descendants' — rather than a document it must read the whole
+of. `Ancestry` already holds the commands whose flags are in scope, so this
 needs nothing new in `ir`, and it wants a type of its own rather than a
 mode on `desc.Command`, so that a consumer can tell from what it holds
 which of the two it has. A new shape is additive under the version

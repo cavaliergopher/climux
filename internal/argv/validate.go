@@ -41,7 +41,7 @@ type claimant struct {
 // claimed it: a name may not repeat anywhere along an ancestor-descendant
 // chain, and the check runs here because a command cannot know its
 // ancestors until the whole tree is in view. See
-// docs/adr/path-scoped-flag-names.md.
+// docs/adr/flags-are-local-by-default.md.
 func validateTree(c *ir.Command, claimed map[string]claimant) error {
 	var errs []error
 	if err := validateSelf(c, claimed); err != nil {

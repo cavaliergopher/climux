@@ -183,7 +183,7 @@ func TestEmptyAttachedValue(t *testing.T) {
 // subcommand that declares it, since the name is legal only after that
 // command is named. The first declarer in depth-first declaration order
 // is named, by its own name rather than its path. See
-// docs/adr/path-scoped-flag-names.md.
+// docs/adr/flags-are-local-by-default.md.
 func TestUnrecognizedOptionNamesSubtree(t *testing.T) {
 	newApp := func() *Command {
 		del := NewCommand("delete", "").Flags(

@@ -56,7 +56,7 @@ type Invocation struct {
 // undecorated by any dialect: "force" rather than "--force".
 //
 // A name may not repeat along a path, so the flag it finds is the only
-// flag that name could mean here; see docs/adr/path-scoped-flag-names.md.
+// flag that name could mean here; see docs/adr/flags-are-local-by-default.md.
 // A name is not unique across the whole tree, though, so a program
 // holding the declaration itself should ask Resolve instead, which cannot
 // answer about a flag of the same name in another subtree.
@@ -215,7 +215,7 @@ type Command struct {
 	// including this one, which is the commands whose flags are in scope
 	// here: a flag is usable from the point its own command is named
 	// onward, so what this command accepts is the union of theirs. See
-	// docs/adr/path-scoped-flag-names.md.
+	// docs/adr/flags-are-local-by-default.md.
 	//
 	// Compile builds it top down while lowering, so nothing reading a
 	// compiled tree has to walk back up to reconstruct it. It is
