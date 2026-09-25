@@ -75,9 +75,9 @@ writes without the command knowing; see WithStdout.
 		return nil
 	}
 
-Option parsing stops at "--". By default every argument after it is an operand, so a command can be
-given an operand that looks like an option. A command that sets ForwardArgs takes the other reading:
-everything after "--" is handed to the handler unparsed as Invocation.Forwarded.
+Option parsing stops at "--". Every argument after it is an operand, so a command can be given an
+operand that looks like an option. A positional marked EndOfOptions stops it the same way once it has
+taken its token, for a command that hands its remaining arguments on to another program.
 
 You can define subcommands by
 
@@ -173,8 +173,9 @@ them with HelpFlag, VersionFlag and VersionCommand and puts them where it
 likes.
 
 All three flags are interrupts, which is the whole of what makes --help
-special: a flag that ends the parse and runs in place of the command that
-was named. Declare one of your own with Interrupt.
+special: they run in place of the command that was named, without its
+middleware, and answer even when the line leaves out an argument it
+requires. Declare one of your own with Interrupt.
 
 # Middleware
 
@@ -305,8 +306,8 @@ a second spelling of --flag=false rather than a feature a flag opts into.
 The value negates with the flag, so --no-flag=false sets true. Short names
 have no negated spelling, since -f=false is already the short way to say
 it, and help does not list the negated spellings, since every boolean has
-one. An interrupt, such as --help, binds no value and so has none of
-these forms: it is given by name and nothing else.
+one. A flag built with Interrupt, such as --help, binds no value and so
+has none of these forms: it is given by name and nothing else.
 
 The detached forms are not permitted for boolean flags because the meaning
 of the command

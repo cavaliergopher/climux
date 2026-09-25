@@ -27,7 +27,7 @@ set `ORBITAL_ACTOR`. `--help` does not.
 | `FromFlagSet` importing a legacy `flag.FlagSet` | `internal/legacy` |
 | Positional arguments | `internal/config` (`KEY`, `VALUE`), `internal/deploy` (`SERVICE`) |
 | Unbounded positional argument | `internal/logscmd` (`orbital logs SERVICE...`) |
-| `ForwardArgs` / `Invocation.Forwarded` | `internal/execcmd` (`orbital exec -- CMD ARGS...`) |
+| `EndOfOptions` | `internal/execcmd` (`orbital exec --service NAME CMD ARGS...`) |
 | `Required`, `Env` | root `--actor` in `main.go`; `internal/telemetry` `--trace` |
 | `Choices` | `internal/telemetry` `--log-level`; `internal/deploy` `--env`, `--strategy` |
 | `Validate` | `internal/config` (`validKey`); `internal/deploy` (`validVersion`) |

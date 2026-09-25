@@ -24,27 +24,6 @@ type Command struct {
 	// Hidden reports that the command is omitted from help output.
 	Hidden bool `json:"hidden,omitempty"`
 
-	// ForwardArgs reports that arguments following a "--" terminator are
-	// passed through to the command rather than rejected.
-	ForwardArgs bool `json:"forwardArgs,omitempty"`
-
-	// Forwarded names the arguments the command hands to its handler
-	// unparsed, when the program named them: what follows an interrupt
-	// command's name, or a ForwardArgs command's "--" terminator. Absent
-	// when the program named nothing, which does not say nothing is
-	// forwarded.
-	Forwarded *Forwarded `json:"forwarded,omitempty"`
-
 	FlagGroups  []*FlagGroup `json:"flagGroups,omitempty"`
 	Subcommands []*Command   `json:"subcommands,omitempty"`
-}
-
-// Forwarded names and explains a command's forwarded arguments; see
-// Command.Forwarded.
-type Forwarded struct {
-	// ValueName is how the forwarded arguments are shown where the
-	// command's arguments are, already written for a reader.
-	ValueName string `json:"valueName"`
-
-	Usage string `json:"usage,omitempty"`
 }

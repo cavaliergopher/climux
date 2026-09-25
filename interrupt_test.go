@@ -2,6 +2,8 @@ package climux
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -85,21 +87,79 @@ func TestNonInterruptSiblingStillEnforcesRules(t *testing.T) {
 	}
 }
 
-// TestInterruptCommandIgnoresItsOwnBadFlag decides the shape of "a wrong
-// flag given to the interrupt command itself": mirroring "cmd --bogus
-// --help", where an interrupt flag answers a line carrying an unrelated
-// mistake, an option the interrupt command does not recognize does not
-// stop it running either -- a lex error is discarded the same way
-// whatever command on the line it names.
-func TestInterruptCommandIgnoresItsOwnBadFlag(t *testing.T) {
-	var tr tracer
-	app := NewCommand("app", "").
-		Subcommands(asInterrupt(NewCommand("version", "").HandleFunc(tr.handler("version", nil))))
+// TestInterruptCommandAtTheRootReadsItsLine asserts that an interrupt
+// which is itself the command the line was parsed against binds what
+// followed it, the way any command does.
+func TestInterruptCommandAtTheRootReadsItsLine(t *testing.T) {
+	var topics []string
+	var ran bool
+	app := asInterrupt(NewCommand("app", "").
+		Flags(Strings(&topics, "topic", nil, "").Positional()).
+		HandleFunc(func(ctx context.Context, inv *Invocation) error {
+			ran = true
+			return nil
+		}))
 
-	if err := Dispatch(context.Background(), app, WithArgs("version", "--nonexistent")); err != nil {
+	if err := Dispatch(context.Background(), app, WithArgs("foo", "bar")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got, want := tr.String(), "version"; got != want {
-		t.Errorf("steps = %q, want %q", got, want)
+	if got, want := ran, true; got != want {
+		t.Errorf("ran = %v, want %v", got, want)
+	}
+	if want := []string{"foo", "bar"}; !slices.Equal(topics, want) {
+		t.Errorf("topics = %q, want %q", topics, want)
+	}
+}
+
+// TestInterruptCommandCompilesIntoItsHandler asserts that an interrupt's
+// callback is the compiled Handler, so running a command is one call
+// however it answers. A second slot holding the real callback would
+// leave Handler reporting the usage error a command with no handler of
+// its own gets, which is not what the program declared.
+func TestInterruptCommandCompilesIntoItsHandler(t *testing.T) {
+	var ran bool
+	app := NewCommand("app", "").
+		Subcommands(asInterrupt(NewCommand("version", "").
+			HandleFunc(func(ctx context.Context, inv *Invocation) error {
+				ran = true
+				return nil
+			})))
+
+	node, err := app.Compile()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sub := node.Subcommands[0]
+	if got, want := sub.Interrupts, true; got != want {
+		t.Errorf("Interrupts = %v, want %v", got, want)
+	}
+	if err := sub.Handler(context.Background(), &Invocation{Cmd: sub}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := ran, true; got != want {
+		t.Errorf("interrupt callback ran = %v, want %v", got, want)
+	}
+}
+
+// TestInterruptCommandDeclaresNoSubcommands asserts that a subcommand
+// beneath an interrupt command is a configuration error, and that flags
+// and positionals are not: a help topic is an argument, not a command.
+func TestInterruptCommandDeclaresNoSubcommands(t *testing.T) {
+	noop := func(ctx context.Context, inv *Invocation) error { return nil }
+	withSub := NewCommand("app", "").Subcommands(
+		InterruptCommand("help", "", noop).Subcommands(NewCommand("config-vars", "")))
+	_, err := withSub.Compile()
+	if err == nil {
+		t.Fatal("Compile succeeded, want a configuration error")
+	}
+	if got, want := err.Error(), "an interrupt command declares no subcommands"; !strings.Contains(got, want) {
+		t.Errorf("error = %q, want it to contain %q", got, want)
+	}
+
+	withTopic := NewCommand("app", "").Subcommands(
+		InterruptCommand("help", "", noop).
+			Flags(String(new(string), "TOPIC", "", "").Positional()))
+	if _, err := withTopic.Compile(); err != nil {
+		t.Errorf("Compile: unexpected error: %v", err)
 	}
 }

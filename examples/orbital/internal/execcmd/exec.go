@@ -1,7 +1,7 @@
-// Package execcmd implements "orbital exec --service NAME -- CMD ARGS...",
-// the one place orbital forwards raw arguments to something else rather
-// than parsing them itself: Command.ForwardArgs makes everything after
-// "--" reach the handler unparsed as Invocation.Forwarded.
+// Package execcmd implements "orbital exec --service NAME CMD ARGS...",
+// the one place orbital hands arguments to something else rather than
+// interpreting them itself: CMD ends option processing, so the command's
+// own options arrive in ARGS intact instead of being read as orbital's.
 package execcmd
 
 import (
@@ -15,24 +15,25 @@ import (
 
 // Command returns the "exec" command.
 func Command() *climux.Command {
-	var service string
+	var service, command string
+	var args []string
 	return climux.NewCommand("exec", "Run a one-off command inside a service's container").
 		Middleware(middleware.Audit).
-		ForwardArgs().
-		Forwarded("cmd", "Command to run inside the container, after --").
 		Flags(
 			climux.String(&service, "service", "", "Service whose container to exec into").
 				Aliases("s").
 				Required(),
+			climux.String(&command, "cmd", "", "Command to run inside the container").
+				Positional().
+				Required().
+				EndOfOptions(),
+			climux.Strings(&args, "arg", nil, "Arguments to the command").
+				Positional(),
 		).
 		HandleFunc(
 			func(ctx context.Context, inv *climux.Invocation) error {
-				if len(inv.Forwarded) == 0 {
-					return fmt.Errorf(
-						"no command given; usage: orbital exec --service NAME -- CMD [ARGS...]")
-				}
 				fmt.Fprintf(inv.Stdout, "%s: would run: %s\n",
-					service, strings.Join(inv.Forwarded, " "))
+					service, strings.Join(append([]string{command}, args...), " "))
 				return nil
 			},
 		)

@@ -53,8 +53,8 @@ Two error classes deliberately do not print usage:
 - A handler's error. The command line was right: the parser accepted it
   and the handler ran, so usage has nothing to correct. A handler that
   discovers an argument problem of its own and wants the full report
-  constructs an `*ArgumentError`, which is exported precisely so it can;
-  see `docs/adr/human-readable-errors.md`.
+  returns one from `NewArgumentErrorf`, which is exported precisely so it
+  can; see `docs/adr/human-readable-errors.md`.
 
 Help is not error reporting and is untouched: `-h` and `--help` print
 usage on the command's stdout and exit 0, and a caller who wants that

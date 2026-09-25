@@ -39,25 +39,6 @@
           "type": "boolean",
           "description": "The command is omitted from help output."
         },
-        "forwardArgs": {
-          "type": "boolean",
-          "description": "Arguments following a \"--\" terminator are passed through to the command rather than rejected."
-        },
-        "forwarded": {
-          "type": "object",
-          "description": "Names the arguments the command hands to its handler unparsed: what follows an interrupt command's name, or a ForwardArgs command's -- terminator. Absent when the program named nothing, which does not say nothing is forwarded.",
-          "required": ["valueName"],
-          "properties": {
-            "valueName": {
-              "type": "string",
-              "description": "How the forwarded arguments are shown where the command's arguments are, already written for a reader."
-            },
-            "usage": {
-              "type": "string",
-              "description": "Explains the forwarded arguments."
-            }
-          }
-        },
         "flagGroups": {
           "type": "array",
           "items": { "$ref": "#/$defs/flagGroup" }
@@ -113,6 +94,10 @@
         "showDefault": {
           "type": "boolean",
           "description": "A formatter should print default beside usage."
+        },
+        "endOfOptions": {
+          "type": "boolean",
+          "description": "Every argument after this one is treated as an argument rather than a flag, even if it begins with a dash, as if the user had typed \"--\" after it."
         },
         "positional": {
           "type": "boolean",

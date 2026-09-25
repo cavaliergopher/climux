@@ -35,6 +35,11 @@ type Flag struct {
 	// of Options.
 	Positional bool `json:"positional,omitempty"`
 
+	// EndOfOptions reports that every argument after this one is treated
+	// as an argument rather than a flag, even if it begins with a dash, as
+	// if the user had typed "--" after it.
+	EndOfOptions bool `json:"endOfOptions,omitempty"`
+
 	// Hidden reports that the flag is omitted from help output.
 	Hidden bool `json:"hidden,omitempty"`
 

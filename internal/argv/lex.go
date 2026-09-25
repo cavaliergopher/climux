@@ -6,9 +6,8 @@ import (
 	"go.hotsrc.dev/climux/ir"
 )
 
-// terminator ends option processing by default, or, on a command that opted
-// in with ForwardArgs, marks where forwarding begins. Only the first one
-// seen is special; see lex's doc comment.
+// terminator ends option processing. Only the first one seen is special;
+// see lex's doc comment.
 const terminator = "--"
 
 func isShortOption(arg string) bool {
@@ -38,7 +37,6 @@ type instructionKind int
 const (
 	instSet instructionKind = iota
 	instDispatch
-	instForward
 	instInterrupt
 )
 
@@ -57,9 +55,6 @@ type instruction struct {
 	// dispatch, interrupt: the command the instruction concerns -- the
 	// one descended into, or the one active when the interrupt was named.
 	cmd *ir.Command
-
-	// forward: every argument after the terminator, unparsed.
-	forwarded []string
 }
 
 // lexResult is what lex returns: the instructions and errors it found,
@@ -102,9 +97,7 @@ type lexResult struct {
 // lex never stops at the first error. An unrecognized or malformed token
 // consumes only itself and lexing continues in the same command, so a
 // command line with several mistakes reports all of them -- though today
-// apply only ever surfaces the first, see apply's doc comment -- and so
-// that an interrupt anywhere on an otherwise broken line still produces
-// an instruction for apply to find.
+// apply only ever surfaces the first, see apply's doc comment.
 func lex(root *ir.Command, argv []string) lexResult {
 	lx := &lexer{argv: argv}
 	lx.enterCommand(root)
@@ -139,8 +132,14 @@ type lexer struct {
 	cmd               *ir.Command
 	optionsByName     map[string]resolvedOption
 	subcommandsByName map[string]*ir.Command
-	positionals       []*ir.Flag
-	posCount          int // set instructions already queued for positionals[0]
+
+	positionals []*ir.Flag
+	posCount    int // set instructions already queued for positionals[0]
+
+	// posBound reports that a positional of this command has taken a
+	// token. From then until every positional is full, a word naming a
+	// subcommand is data rather than a subcommand; see lexOperand.
+	posBound bool
 
 	optionsEnded bool
 
@@ -173,22 +172,21 @@ func (lx *lexer) enterCommand(cmd *ir.Command) {
 		}
 	}
 	lx.posCount = 0
+	lx.posBound = false
 	lx.subcommandsByName = make(map[string]*ir.Command)
 	for _, sub := range cmd.Subcommands {
 		lx.subcommandsByName[sub.Name] = sub
 	}
 }
 
-// lexOne resolves one token from argv: an argument being forwarded past the
-// terminator, the terminator itself, an operand, or an option.
+// lexOne resolves one token from argv: the terminator, an operand, or an
+// option.
 //
-// Guideline 10 gives "--" two readings and a command picks one. By default
-// it ends option processing, so every argument after it is an operand
-// however many dashes it starts with -- the escape hatch that lets a
-// command take an operand named "-rf". A command that set ForwardArgs
-// instead hands everything after it to apply unparsed, in one instruction:
-// nothing past the terminator is interpreted, so there is nothing left for
-// lex to do with the rest of argv.
+// Guideline 10 gives "--" two readings and this one takes the first: it
+// ends option processing, so every argument after it is an operand however
+// many dashes it starts with -- the escape hatch that lets a command take
+// an operand named "-rf". It is the user's to write and nothing a program
+// declares, so no command reads it differently.
 //
 // Only the first "--" is special. Once options have ended, a later one is
 // an ordinary operand, as is a "-h" that would otherwise ask for help.
@@ -201,15 +199,7 @@ func (lx *lexer) lexOne() {
 
 	if !lx.optionsEnded {
 		if tok == terminator {
-			if lx.cmd.ForwardArgs {
-				lx.instructions = append(lx.instructions, instruction{
-					kind:      instForward,
-					forwarded: append([]string(nil), lx.argv[lx.pos:]...),
-				})
-				lx.pos = len(lx.argv)
-			} else {
-				lx.optionsEnded = true
-			}
+			lx.optionsEnded = true
 			return
 		}
 		if !isOperand(tok) {
@@ -223,12 +213,36 @@ func (lx *lexer) lexOne() {
 // lexOperand resolves an operand to the next positional flag awaiting one,
 // or, when the command takes none, to a subcommand name.
 func (lx *lexer) lexOperand(tok string, idx int) {
+	// A command's first operand decides between its subcommands and its
+	// positionals: a word naming a subcommand dispatches, and any other
+	// word binds the first positional. Once one has bound, the command is
+	// filling its positionals, so a later word that happens to name a
+	// subcommand is data -- "docker compose run" hands run to compose --
+	// until every positional is full. Dispatch starts the choice over:
+	// the next word is the subcommand's first operand.
+	//
+	// Ending options does not change any of this. It stops "-" meaning
+	// an option, and nothing else.
+	if !lx.posBound || len(lx.positionals) == 0 {
+		if sub, ok := lx.subcommandsByName[tok]; ok {
+			lx.dispatch(sub)
+			return
+		}
+	}
+
 	if len(lx.positionals) > 0 {
 		f := lx.positionals[0]
 		// An operand names no option, so it resolves to the flag alone
 		// and its value is bound as written.
 		lx.emitSet(resolvedOption{flag: f}, tok, false, idx)
 		lx.posCount++
+		lx.posBound = true
+		// Option processing ends once the argument that says so has taken
+		// its token, which is the author's half of what a user writes as
+		// "--": everything after it is an operand.
+		if f.EndOfOptions {
+			lx.optionsEnded = true
+		}
 		if f.MaxCount > 0 && lx.posCount == f.MaxCount {
 			// all done with this positional flag
 			lx.positionals = lx.positionals[1:]
@@ -245,25 +259,15 @@ func (lx *lexer) lexOperand(tok string, idx int) {
 			"extra operand: %s", tok))
 		return
 	}
-	sub, ok := lx.subcommandsByName[tok]
-	if !ok {
-		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, nil, tok,
-			"unrecognized subcommand: %s", tok))
-		return
-	}
+	lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, nil, tok,
+		"unrecognized subcommand: %s", tok))
+}
+
+// dispatch descends into sub, which every route to a subcommand ends by
+// doing.
+func (lx *lexer) dispatch(sub *ir.Command) {
 	lx.instructions = append(lx.instructions, instruction{kind: instDispatch, cmd: sub})
 	lx.enterCommand(sub)
-
-	// Naming an interrupt command ends the lex the way naming an
-	// interrupt flag does: every later token is forwarded verbatim,
-	// whatever it looks like, for the handler to interpret or ignore.
-	if sub.Interrupt != nil {
-		lx.instructions = append(lx.instructions, instruction{
-			kind:      instForward,
-			forwarded: append([]string(nil), lx.argv[lx.pos:]...),
-		})
-		lx.pos = len(lx.argv)
-	}
 }
 
 // lexOption resolves one option to its option-argument. The two forms are
@@ -286,7 +290,9 @@ func (lx *lexer) lexLongOption(tok string, idx int) {
 		lx.unrecognizedOption(name)
 		return
 	}
-	if o.flag.Handler != nil {
+	// A flag bound to no value is given by name alone, and interrupting
+	// is all it does.
+	if o.flag.Handler != nil && o.flag.Value == nil {
 		lx.emitInterrupt(o.flag, name, attached)
 		return
 	}
@@ -327,11 +333,16 @@ func (lx *lexer) lexShortOptions(arg string, idx int) {
 		}
 		rest := arg[i+utf8.RuneLen(r):]
 
-		// An interrupt ends the parse, so it also ends the cluster: the
-		// names after it in the same argument are never reached.
-		if o.flag.Handler != nil {
-			lx.emitInterrupt(o.flag, name, len(rest) > 0 && rest[0] == '=')
-			return
+		// A flag bound to no value reads nothing, so the names after it in
+		// the same argument are read as usual -- unless one was attached
+		// with "=", which is malformed and consumes the rest of it.
+		if o.flag.Handler != nil && o.flag.Value == nil {
+			attached := len(rest) > 0 && rest[0] == '='
+			lx.emitInterrupt(o.flag, name, attached)
+			if attached {
+				return
+			}
+			continue
 		}
 
 		if !o.flag.TakesValue {
@@ -423,38 +434,32 @@ func (lx *lexer) emitSet(o resolvedOption, value string, attached bool, argIndex
 		attached: attached,
 		argIndex: argIndex,
 	})
+	// A flag that interrupts still binds its value, so its handler can
+	// read what it was given; naming it records the interrupt too.
+	if o.flag.Handler != nil {
+		lx.instructions = append(lx.instructions, instruction{
+			kind: instInterrupt, flag: o.flag, cmd: lx.cmd,
+		})
+	}
 }
 
-// emitInterrupt records that the option name reached an interrupt: a
-// flag that ends the parse and runs in place of the command's handler.
-// It names the command active here, which is the command the interrupt
-// concerns -- "app remote --help" asks about remote, whichever command
-// up the path declared the flag.
+// emitInterrupt records that the option name reached an interrupt bound
+// to no value: a flag that runs in place of the handler of the command
+// active here. "app remote --help" concerns remote and "app --help remote"
+// concerns app: a flag that takes no value names no other command, so
+// where it was given is all it can mean.
 //
-// An interrupt takes no argument, so one attached to it is a malformed
-// token rather than a value to bind. Recording the error and no
-// instruction is what keeps the two apart: apply discards the errors an
-// interrupt outran, and a line whose only interrupt was misspelled has
-// none to discard them.
-//
-// An interrupt ends the lex: nothing after its token is read, and the
-// rest of argv rides on the instruction verbatim, for the handler to
-// interpret or ignore. The letters after an interrupt in the same
-// cluster are part of the token already read, so they forward with
-// nothing.
+// Such a flag takes no argument, so one attached to it is a malformed
+// token rather than a value to bind, and is reported like any other.
+// Nothing about an interrupt ends the lex: the rest of the line is read
+// as usual, so "app --version --format=json" still binds its format.
 func (lx *lexer) emitInterrupt(f *ir.Flag, name string, attached bool) {
 	if attached {
 		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, f, name,
 			"option takes no argument: %s", name))
 		return
 	}
-	lx.instructions = append(lx.instructions, instruction{
-		kind:      instInterrupt,
-		flag:      f,
-		cmd:       lx.cmd,
-		forwarded: append([]string(nil), lx.argv[lx.pos:]...),
-	})
-	lx.pos = len(lx.argv)
+	lx.instructions = append(lx.instructions, instruction{kind: instInterrupt, flag: f, cmd: lx.cmd})
 }
 
 // findDescendantWithFlag returns the first descendant of cmd to answer to

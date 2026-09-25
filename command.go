@@ -41,8 +41,8 @@ const (
 // ctx is the context given to Run, so a handler that does anything
 // cancelable should honor it.
 //
-// inv describes how the command was called: which command was named, any
-// arguments forwarded past a "--" terminator, and the streams to use. A
+// inv describes how the command was called: which command was named, and
+// the streams to use. A
 // handler should write inv.Stdout and inv.Stderr rather than the process
 // streams, so that a caller redirecting the command captures its output.
 //
@@ -79,21 +79,15 @@ type Command struct {
 	summary     string
 	description string
 	hidden      bool
-	forwardArgs bool
 
 	// interrupt, if set, is what makes the command an interrupt, the
 	// way a Handler makes a flag one: the callback is the marker, and
-	// invoking the command runs it in place of any handler, skipping
-	// the checks an ordinary command line must pass. There is no
+	// invoking the command runs it in place of any handler, excusing a
+	// required argument the line left out. There is no
 	// chained setter for it -- a program wanting one of its own reaches
 	// for InterruptCommand, the same constructor this package's own are
 	// built with.
 	interrupt HandlerFunc
-
-	// forwardedValueName and forwardedUsage name and explain the
-	// arguments the command forwards unparsed; see Command.Forwarded.
-	forwardedValueName string
-	forwardedUsage     string
 
 	flagGroups  []*FlagGroup
 	registries  []*Registry
@@ -127,14 +121,12 @@ func NewCommand(name, summary string) *Command {
 	}).Flags()
 }
 
-// InterruptCommand returns a Command that ends the program with fn
-// before any handlers or middleware run, the way --help and --version
-// do, even when the rest of the command line is incomplete or wrong.
-//
-// Everything after the command's name reaches fn unparsed, as
-// Invocation.Forwarded; an interrupt declares no flags and no
-// subcommands of its own. VersionCommand and SchemaCommand are two of
-// these, ready made.
+// InterruptCommand returns a Command that runs fn the way --help and
+// --version run: without middleware, and even when the command line
+// leaves out an argument some command on it requires. The rest of the
+// line is read and checked as usual, so it may declare flags and
+// arguments of its own, but no subcommands. VersionCommand and
+// SchemaCommand are two of these, ready made.
 func InterruptCommand(name, summary string, fn HandlerFunc) *Command {
 	c := NewCommand(name, summary)
 	c.interrupt = fn
@@ -333,17 +325,14 @@ func (c *Command) lower(parent *ir.Command, inherited Middleware, nodeMap map[*C
 		fullName = parent.FullName + " " + c.name
 	}
 	node := &ir.Command{
-		Name:               c.name,
-		Summary:            c.summary,
-		Description:        c.description,
-		Hidden:             c.hidden,
-		ForwardArgs:        c.forwardArgs,
-		Interrupt:          c.interrupt,
-		ForwardedValueName: argv.ForwardedValueNameFor(c.forwardedValueName),
-		ForwardedUsage:     c.forwardedUsage,
-		FullName:           fullName,
-		Handler:            c.handlerFunc,
-		UsageFunc:          c.usageFunc,
+		Name:        c.name,
+		Summary:     c.summary,
+		Description: c.description,
+		Hidden:      c.hidden,
+		Interrupts:  c.interrupt != nil,
+		FullName:    fullName,
+		Handler:     c.handlerFunc,
+		UsageFunc:   c.usageFunc,
 	}
 	node.Root = node
 	node.Ancestry = []*ir.Command{node}
@@ -377,16 +366,23 @@ func (c *Command) lower(parent *ir.Command, inherited Middleware, nodeMap map[*C
 
 	// The handler is assembled here rather than at dispatch, so the
 	// compiled command carries the whole of what it does and nothing
-	// downstream has to know that middleware exists. The fallback is not
-	// wrapped: there is no handler for a wrapper to wrap, and a command
-	// that only groups subcommands must not run its ancestors' wrappers.
-	// An interrupt is not wrapped either, own or inherited, the way an
-	// interrupt flag's Handler never is: middleware is written against a
-	// command line that parsed, and an interrupt answers one that may
-	// not have.
-	if node.Handler == nil {
+	// downstream has to know that middleware exists, or that an
+	// interrupt answers differently: one slot holds whatever the command
+	// runs, so nothing below it has two to choose between.
+	//
+	// Neither an interrupt nor the fallback is wrapped. In the fallback's
+	// case there is no handler for a wrapper to wrap, and a command that
+	// only groups subcommands must not run its ancestors' wrappers; an
+	// interrupt goes unwrapped, own or inherited, the way an interrupt
+	// flag's Handler never is, because middleware is written against a
+	// command line that parsed and an interrupt answers one that may not
+	// have.
+	switch {
+	case c.interrupt != nil:
+		node.Handler = c.interrupt
+	case node.Handler == nil:
 		node.Handler = missingSubcommand(node)
-	} else if middleware != nil && c.interrupt == nil {
+	case middleware != nil:
 		node.Handler = middleware(node.Handler)
 	}
 	if c.interrupt != nil && c.handlerFunc != nil {
@@ -664,34 +660,5 @@ func (c *Command) UsageFunc(fn ir.UsageFunc) *Command {
 // Run is otherwise unchanged, including when the variable is unset.
 func (c *Command) EnableCompletion() *Command {
 	c.completionEnabled = true
-	return c
-}
-
-// ForwardArgs specifies that a "--" on the command line ends option
-// processing, and that everything after it reaches the handler unparsed as
-// Invocation.Forwarded rather than binding to positional flags.
-//
-// This is for a command that hands arguments on to something else, such as
-// a subprocess. Without it, "--" has no special meaning.
-func (c *Command) ForwardArgs() *Command {
-	c.forwardArgs = true
-	return c
-}
-
-// Forwarded names the arguments the command forwards to its handler
-// unparsed, for help and for the machine-readable description: what an
-// interrupt command takes after its name, or what a command that set
-// ForwardArgs takes after the "--" terminator.
-//
-//	InterruptCommand("schema", summary, fn).
-//	    Forwarded("command", "Command to describe")
-//
-// valueName is shown where the forwarded arguments are, the way a
-// positional argument's name is shown, and usage explains them beneath
-// the usage line. Naming forwarded arguments on a command that forwards
-// nothing is a configuration error.
-func (c *Command) Forwarded(valueName, usage string) *Command {
-	c.forwardedValueName = valueName
-	c.forwardedUsage = usage
 	return c
 }

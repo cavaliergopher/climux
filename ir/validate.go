@@ -27,41 +27,19 @@ func validateTree(c *Command) error {
 }
 
 // validateSelf checks c for the configuration errors it can answer on its
-// own terms: flag syntax, positional and subcommand conflicts, and two of
-// its children answering to one name. It does not descend into
+// own terms: flag syntax, how positionals follow one another, an interrupt
+// command's subcommands, and two of its children answering to one name. It does not descend into
 // subcommands.
 func validateSelf(c *Command) error {
 	var errs []error
 
-	// An interrupt answers and takes no other action, so there is
-	// nothing for a flag or a subcommand of its own to do: everything
-	// after its name is forwarded to its handler unparsed. Declaring
-	// either is a mistake worth naming at the declaration.
-	if c.Interrupt != nil {
-		for _, group := range c.FlagGroups {
-			if len(group.Flags) > 0 {
-				errs = append(errs, newConfigErrorf(nil, c, nil,
-					"an interrupt command declares no flags"))
-				break
-			}
-		}
-		if len(c.Subcommands) > 0 {
-			errs = append(errs, newConfigErrorf(nil, c, nil,
-				"an interrupt command declares no subcommands"))
-		}
-	}
-
-	// Naming forwarded arguments promises the reader something follows
-	// unparsed, which only an interrupt or a ForwardArgs command holds
-	// up; and the name is how they are shown, so an explanation without
-	// one has nowhere to hang.
-	if c.ForwardedValueName != "" && c.Interrupt == nil && !c.ForwardArgs {
+	// A subcommand beneath an interrupt would answer in its place without
+	// its properties -- a missing required argument reported again, its
+	// ancestors' middleware run again -- so "app help topic" would behave
+	// unlike "app help". A topic is an argument the handler reads instead.
+	if c.Interrupts && len(c.Subcommands) > 0 {
 		errs = append(errs, newConfigErrorf(nil, c, nil,
-			"only a command that forwards arguments may name them"))
-	}
-	if c.ForwardedUsage != "" && c.ForwardedValueName == "" {
-		errs = append(errs, newConfigErrorf(nil, c, nil,
-			"forwarded arguments need a value name to be shown by"))
+			"an interrupt command declares no subcommands"))
 	}
 
 	// Dispatch resolves a name to one command, so two subcommands
@@ -91,10 +69,11 @@ func validateSelf(c *Command) error {
 			if err := validateFlag(flag); err != nil {
 				errs = append(errs, err)
 			}
+			if flag.EndOfOptions && !flag.Positional {
+				errs = append(errs, newConfigErrorf(nil, c, flag,
+					"only a positional argument may end option processing"))
+			}
 			if flag.Positional {
-				if len(c.Subcommands) > 0 {
-					errs = append(errs, newConfigErrorf(nil, c, flag, "cannot specify both subcommands and positional arguments"))
-				}
 				if hasUnboundedPositional {
 					errs = append(errs, newConfigErrorf(nil, c, flag, "positional arguments cannot follow unbounded positional arguments"))
 				}
@@ -135,9 +114,9 @@ func validateFlag(f *Flag) error {
 			fail("option is not matchable: %s", option)
 		}
 	}
-	// An interrupt runs rather than binds, so it is the one flag with
-	// nothing to bind to, and the one flag an operand could never be:
-	// ending the parse is something a flag is named to do.
+	// A flag may be bound to nothing only when it interrupts, since
+	// running is then the whole of what it does. An interrupt fires when
+	// the line names it, and a positional argument is never named.
 	if f.Handler != nil {
 		if f.Positional {
 			fail("positional argument must not interrupt")

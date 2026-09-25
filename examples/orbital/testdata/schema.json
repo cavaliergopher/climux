@@ -442,11 +442,6 @@
         "name": "exec",
         "fullName": "orbital exec",
         "summary": "Run a one-off command inside a service's container",
-        "forwardArgs": true,
-        "forwarded": {
-          "valueName": "CMD",
-          "usage": "Command to run inside the container, after --"
-        },
         "flagGroups": [
           {
             "name": "options",
@@ -468,6 +463,27 @@
                     "option": "-s"
                   }
                 ]
+              },
+              {
+                "name": "cmd",
+                "valueName": "CMD",
+                "kind": "string",
+                "usage": "Command to run inside the container",
+                "positional": true,
+                "endOfOptions": true,
+                "minCount": 1,
+                "maxCount": 1,
+                "takesValue": true
+              },
+              {
+                "name": "arg",
+                "valueName": "ARG",
+                "kind": "string",
+                "usage": "Arguments to the command",
+                "default": "[]",
+                "positional": true,
+                "maxCount": 0,
+                "takesValue": true
               }
             ]
           }

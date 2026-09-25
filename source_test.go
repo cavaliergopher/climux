@@ -153,9 +153,9 @@ func TestSourceRepeated(t *testing.T) {
 	assertStrings(t, []string{"a", "b"}, tags)
 }
 
-// TestSourceInterrupt covers a command line an interrupt cut short: the
-// flags given before it were applied and are recorded as such, and the
-// environment, which an interrupt never reads, is not.
+// TestSourceInterrupt covers a command line carrying an interrupt: the
+// line is read as usual, so a flag given beside it and one the
+// environment supplies are both recorded where they came from.
 func TestSourceInterrupt(t *testing.T) {
 	t.Setenv("APP_OUTPUT", "wide")
 	var verbose bool
@@ -177,9 +177,10 @@ func TestSourceInterrupt(t *testing.T) {
 	if got, want := inv.Source("verbose"), SourceArgs; got != want {
 		t.Errorf("Source(%q) = %v, want %v", "verbose", got, want)
 	}
-	if got, want := inv.Source("output"), SourceDefault; got != want {
+	if got, want := inv.Source("output"), SourceEnv; got != want {
 		t.Errorf("Source(%q) = %v, want %v", "output", got, want)
 	}
+	assertString(t, "wide", output)
 }
 
 // TestSourceString covers the words a Source is written as, which a

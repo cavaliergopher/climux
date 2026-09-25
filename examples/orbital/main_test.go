@@ -78,12 +78,18 @@ func TestOrbital(t *testing.T) {
 				"web: showing log lines from the last 10m0s\n",
 		},
 		{
-			name: "ExecForwardsPastTheTerminator",
-			args: []string{"exec", "--service", "api", "--", "echo", "hi", "there"},
-			env:  []string{actor},
-			// The forwarded words reach the handler unparsed, spaces and
-			// all, rather than binding to operands of exec itself.
+			name:   "ExecPastTheTerminator",
+			args:   []string{"exec", "--service", "api", "--", "echo", "hi", "there"},
+			env:    []string{actor},
 			stdout: "api: would run: echo hi there\n",
+		},
+		{
+			// CMD ends option processing, so the command's own options
+			// reach it rather than being read as exec's.
+			name:   "ExecNeedsNoTerminator",
+			args:   []string{"exec", "--service", "api", "ls", "-la", "--service", "x"},
+			env:    []string{actor},
+			stdout: "api: would run: ls -la --service x\n",
 		},
 		{
 			name: "HiddenCommandStillRuns",

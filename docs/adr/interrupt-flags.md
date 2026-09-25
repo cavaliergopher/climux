@@ -18,19 +18,38 @@ command line surface omitted `--help` entirely, a second argv dialect would
 have had to reimplement the mechanism rather than only the spelling, and a
 program could neither rename `-h` for something of its own nor drop it.
 
-What actually made `--help` special was never its name. It was that naming
-it ends the parse and discards the errors it outran, so that
-`app --bogus --help` prints help rather than reporting the typo. Nothing
+What actually made `--help` special was never its name. It was that
+`app --help` has to answer someone who does not yet know what the command
+requires, so a required argument they left out cannot stop it. Nothing
 about that is peculiar to help: `--version` wants it too, and so does any
 flag that reports on the program rather than operating it.
 
 ## Decision
 
-A flag with an `ir.Flag.Handler` is an **interrupt**: naming it on the
-command line ends the parse there, discards every lexing error recorded so
-far, and runs the handler in place of the handler of whichever command was
-active. `ir.Invocation.Interrupt` names the flag that ended the parse, and
-replaces `HelpRequested`.
+A flag with an `ir.Flag.Handler` is an **interrupt**. Naming it does three
+things and no more:
+
+- it **excuses a missing required argument**, anywhere on the line;
+- it **runs its handler in place of** the handler of the command it was
+  given on;
+- it **runs no middleware**.
+
+The rest of the line is read and checked as usual, so
+`app --version --format=json` binds its format and `app --bogus --help`
+reports the typo. `ir.Invocation.Interrupt` names the first interrupt the
+line gave, and replaces `HelpRequested`. A command built with
+`InterruptCommand` answers the same way once the line reaches it, and may
+declare flags and arguments of its own: `app help --format=json`. It may
+not declare subcommands, which would answer in its place without its
+properties; a help topic is an argument its handler reads,
+`app help TOPIC`.
+
+The first design ended the parse at the interrupt, discarded the errors it
+outran, and handed the rest of the line to the handler unread. It was
+dropped because it bought nothing help needs and cost two things users do:
+a later flag the interrupt should honour never bound, and a real mistake
+beside `--help` was silently excused. Excusing only the missing argument
+is the whole of what `--help` requires.
 
 `--help` is one interrupt among others, and nothing about it is privileged.
 It is lexed through the option table, validated by the ordinary collision
@@ -61,17 +80,23 @@ ancestor's options stay matchable through a descent: the root's reaches
 every command under it and binds to whichever one was named. A command
 below may add its own, and collides with the root's if one is there.
 
-An interrupt binds no value. It has no `Value`, no default to restore, and
-no negated spelling, and an attached value -- `--help=false` -- is a
-malformed token rather than something to set.
+Any flag may interrupt, through `Flag.Interrupt`, and still binds its
+value, so the author chooses what a help flag means by its type. A flag
+built with `Interrupt` takes no value, so `app --help sub` is help for
+`app`: it names no other command. A `String` flag that interrupts takes
+the next word as its value, so `app --help sub` hands `sub` to a handler
+that dispatches on it. The parser does not guess between them.
 
-An interrupt runs no middleware and depends on no flag being correct. It
-answers and takes no other action: a program whose middleware redirects
-output to a file writes no file for `--help`, and someone who wants the
-help message in a file redirects the shell. This is a guarantee, not a
-consequence of middleware happening to wrap handlers -- an interrupt that
-ran its ancestors' wrappers could be refused by an authorization check, or
-could act on a command line it never finished reading.
+A flag bound to no value has no default to restore and no negated
+spelling, and an attached value -- `--help=false` -- is a malformed token
+rather than something to set.
+
+An interrupt runs no middleware. It answers and takes no other action: a
+program whose middleware redirects output to a file writes no file for
+`--help`, and someone who wants the help message in a file redirects the
+shell. This is a guarantee, not a consequence of middleware happening to
+wrap handlers -- an interrupt that ran its ancestors' wrappers could be
+refused by an authorization check before it answered.
 
 The version builders take the string the program supplies, since the
 library has none to report, and print it beside the root command's name.
@@ -88,11 +113,12 @@ library has none to report, and print it beside the root command's name.
 - A command may not declare `-h` or `--help` alongside the help flag: the
   ordinary collision check reports it, naming both ends. Without the help
   flag the names are simply free.
-- `VersionCommand` is an ordinary command, so an ancestor's `Required()`
-  flag still applies to it where `VersionFlag`, being an interrupt, answers
-  without one. The orbital example shows both and says so.
+- `VersionCommand` and `VersionFlag` answer alike: neither needs an
+  ancestor's `Required()` flag.
+- An interrupt answers a wrong command line with the error, not with its
+  own output. The user fixes the line and asks again.
 - A description marshaled from the compiled tree carries the interrupt's
-  options, its usage and the fact that it takes no value, but not that it
-  ends the parse: `Handler` is behavior, tagged `json:"-"`. If a consumer
-  ever needs that fact, it wants a separate marshaled field rather than an
+  options, its usage and whether it takes a value, but not that it
+  interrupts: `Handler` is behavior, tagged `json:"-"`. If a consumer ever
+  needs that fact, it wants a separate marshaled field rather than an
   exported func.

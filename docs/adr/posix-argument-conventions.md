@@ -83,9 +83,9 @@ values only: an attached `--verbose=false` sets false, for which see
 be given in either order; positional flags bind left to right in
 declaration order. Repetition is ordered too: `Value.Set` is called once
 per occurrence, in the order the occurrences appear. `--help` is subject to
-the same rule and does not obey it today: it short-circuits where it is
-found, so `app --bogus --help` reports the unknown flag while
-`app --help --bogus` prints help. Help wherever it appears is the rule.
+the same rule: it excuses a missing required argument wherever it appears,
+and nothing else, so `app --bogus --help` and `app --help --bogus` both
+report the unknown flag.
 
 **Guideline 13 — a bare `-` is an operand.** The parser passes it through
 untouched, and whether it means standard input, standard output or a file
@@ -120,20 +120,27 @@ an error about ordering that no amount of permutation fixes. See
 own reading, as the default: every argument after `--` is an operand
 however many dashes it starts with, so a command can be given an operand
 named `-rf`. This is the escape hatch guideline 14 depends on for a
-detached value, the attached form being the other. A command that instead
-wants what follows handed on unparsed opts in with `ForwardArgs`, and
-reads it from `Invocation.Forwarded`.
+detached value, the attached form being the other.
 
-A command that sets `ForwardArgs` takes the second reading instead, and
-everything after `--` reaches the handler as `Invocation.Forwarded` rather
-than binding to operand slots. POSIX has no third category, but POSIX has
-no subcommands either, and the arguments a command means to forward to
-something else are not the same as the operands it consumes itself.
+`--` is the user's to write. Only the first one is special; after it, a
+second is an ordinary operand, as is a `-h` that would otherwise ask for
+help. It ends option processing and nothing else: a word naming a
+subcommand still dispatches.
 
-The two readings disagree about where the arguments go, so a command has
-one or the other and `ForwardArgs` says which. Only the first `--` is
-special either way; after it, a second is an ordinary operand, as is a
-`-h` that would otherwise ask for help.
+A program declares the same thing in advance with `EndOfOptions` on a
+positional. Once that argument has taken its token, options have ended, so
+`docker run [OPTIONS] IMAGE [COMMAND] [ARG...]` hands `-la` in
+`docker run alpine ls -la` to the container without its user typing a
+terminator.
+
+Three designs gave forwarding a mechanism of its own and were dropped: a
+`Rest` kind of flag, a `ForwardArgs` bit keyed on the terminator, and an
+`AnyCommand` that caught an unrecognised word and everything after it
+unread. Each named a new thing for the arguments a command does not
+parse, when all that was needed was a mark for where option processing
+ends. The terminator-keyed one also failed on its own terms: it moved a
+burden onto everyone using the program, and no tool in the argv audit --
+docker, git, gh, cargo, kubectl, aws -- requires a terminator to forward.
 
 ### Not adopted
 

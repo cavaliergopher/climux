@@ -67,17 +67,5 @@ func ValueNameFor(name, valueName string, positional, takesValue bool) string {
 	return strings.ToUpper(strings.ReplaceAll(valueName, "-", "_"))
 }
 
-// ForwardedValueNameFor returns how the name a command gives its
-// forwarded arguments is written where they are shown to a reader, or ""
-// when the program named none. It is decorated the way a positional
-// argument's value name is, since both stand for what a user types after
-// the command.
-func ForwardedValueNameFor(valueName string) string {
-	if valueName == "" {
-		return ""
-	}
-	return strings.ToUpper(strings.ReplaceAll(valueName, "-", "_"))
-}
-
 // genericValueName stands for a value the flag's own name cannot describe.
 const genericValueName = "VALUE"

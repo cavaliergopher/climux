@@ -121,18 +121,26 @@ type Flag struct {
 	ValueName string
 
 	// Kind classifies the value the flag takes; see Kind. It is empty for
-	// an interrupt, which binds no value and so has none to classify.
+	// a flag bound to no value, which has none to classify.
 	Kind Kind
 
 	Usage       string
 	Default     string
 	ShowDefault bool
 	Positional  bool
-	Hidden      bool
-	MinCount    int
-	MaxCount    int
-	EnvVar      string
-	Choices     []string
+
+	// EndOfOptions reports that every argument after this one is treated
+	// as an argument rather than a flag, even if it begins with a dash, as
+	// if the user had typed "--" after it. Only a positional flag may set
+	// it, since only a positional has a place on the line to take effect
+	// from.
+	EndOfOptions bool
+
+	Hidden   bool
+	MinCount int
+	MaxCount int
+	EnvVar   string
+	Choices  []string
 
 	// TakesValue reports whether giving the flag on the command line
 	// consumes a value. A boolean flag reports false: naming it alone
@@ -161,19 +169,17 @@ type Flag struct {
 	Origin Origin
 
 	// Handler, if set, makes the flag an interrupt: naming it on the
-	// command line ends the parse there and runs this in place of the
-	// handler of the command that was active, which is the command the
-	// resulting Invocation names.
+	// command line runs this in place of the handler of the command it was
+	// given on, which is the command the resulting Invocation names.
 	//
-	// Nothing after the interrupt is read, and nothing the command line
-	// said is checked -- not the flag rules, not the environment
-	// variables -- so an interrupt answers even a command line that is
-	// otherwise wrong. That is what lets the flag asking for help print
-	// it beside a typo rather than reporting the typo instead.
+	// The rest of the line is read as usual, and every rule of it still
+	// holds but one: a required argument left out is not an error. That
+	// is what lets "app --help" answer someone who does not yet know what
+	// the command requires. No middleware wraps it.
 	//
-	// An interrupt binds no value: it takes none on the command line, so
-	// it has no Value, no default to restore, and no opposite for the
-	// command line to spell.
+	// An interrupt binds its value like any other flag. One with no Value
+	// -- see climux.Interrupt -- takes no argument on the command line,
+	// and has no default to restore and no opposite to spell.
 	Handler HandlerFunc
 }
 
@@ -225,20 +231,21 @@ func (f *Flag) Set(s string) error {
 // and is absent from the result.
 func (f *Flag) Describe() *desc.Flag {
 	return &desc.Flag{
-		Name:        f.Name,
-		ValueName:   f.ValueName,
-		Kind:        string(f.Kind),
-		Usage:       f.Usage,
-		Default:     f.Default,
-		ShowDefault: f.ShowDefault,
-		Positional:  f.Positional,
-		Hidden:      f.Hidden,
-		MinCount:    f.MinCount,
-		MaxCount:    f.MaxCount,
-		EnvVar:      f.EnvVar,
-		Choices:     slices.Clone(f.Choices),
-		TakesValue:  f.TakesValue,
-		Options:     f.describeOptions(),
+		Name:         f.Name,
+		ValueName:    f.ValueName,
+		Kind:         string(f.Kind),
+		Usage:        f.Usage,
+		Default:      f.Default,
+		ShowDefault:  f.ShowDefault,
+		Positional:   f.Positional,
+		EndOfOptions: f.EndOfOptions,
+		Hidden:       f.Hidden,
+		MinCount:     f.MinCount,
+		MaxCount:     f.MaxCount,
+		EnvVar:       f.EnvVar,
+		Choices:      slices.Clone(f.Choices),
+		TakesValue:   f.TakesValue,
+		Options:      f.describeOptions(),
 	}
 }
 

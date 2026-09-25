@@ -170,9 +170,12 @@ options, which is where argparse puts them. The `HelpFlag`, `VersionFlag`
 and `VersionCommand` constructors build the same things for a program that
 wants them somewhere else: last, hidden, or under a heading of their own.
 
-All three are *interrupts*: a flag that ends the parse and runs in place of
-the command that was named. That is the whole of what makes `--help`
-special, and `climux.Interrupt` declares one of your own. Nothing is mounted
+All three are *interrupts*: they run in place of the command that was
+named, without its middleware, and answer even when the line leaves out an
+argument the command requires. The rest of the line is read as usual, so
+`app --version --format=json` still binds its format. That is the whole of
+what makes `--help` special, and `climux.Interrupt` declares one of your
+own. Nothing is mounted
 that a program did not ask for.
 
 ## Command line syntax
@@ -192,10 +195,11 @@ and two mean the same thing.
 ```
 
 Two arguments are not flags at all. A bare `-` is an ordinary operand, left
-to the handler to interpret, and `--` ends option processing by default:
-every argument after it is an operand, however many dashes it starts with.
-A command that sets `ForwardArgs` hands everything after `--` to the
-handler unparsed instead, as `Invocation.Forwarded`.
+to the handler to interpret, and `--` ends option processing: every
+argument after it is an operand, however many dashes it starts with. A
+positional marked `EndOfOptions` does the same once it has taken its
+token, which is how a command hands its remaining arguments to another
+program without its user typing a terminator.
 
 An argument beginning with `-` is never taken as a detached value, so
 `--count -5` is a missing value rather than negative five; write
@@ -222,11 +226,11 @@ Five departures from `getopt_long` are deliberate, and
 - **Long options may not be abbreviated.** `getopt_long` accepts any unique
   prefix, but a command tree makes "unique" a moving target: adding a flag
   to a subcommand can break a script that never changed.
-- **`ForwardArgs` is opt-in.** By default, everything after `--` binds to
-  positional flags like any other operand. A command that sets
-  `ForwardArgs` instead hands it to the handler unparsed, as
-  `Invocation.Forwarded`. POSIX has no subcommands, so it has no case to
-  forward arguments to.
+- **A program may end options itself.** `getopt` ends option processing
+  only at `--`. A positional marked `EndOfOptions` ends it once it has
+  taken its token, so `docker run [OPTIONS] IMAGE [COMMAND] [ARG...]` needs
+  no terminator from its user. POSIX has no subcommands, and so no case of
+  one program handing its arguments to another.
 - **`-h` and `--help` are mounted**, not reserved, which is GNU practice
   rather than POSIX. They are an ordinary flag on the root of every tree,
   so a program may rename or drop them with `Command.HelpFlag`, and a

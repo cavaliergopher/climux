@@ -45,6 +45,26 @@ func Exitf(code int, format string, a ...any) error {
 	return ir.Exitf(code, format, a...)
 }
 
+// NewArgumentErrorf returns an error reporting that the command line was
+// wrong, with its message formatted from format and a. Run reports it the
+// way it reports a mistake the parser finds: "Argument error: ", the
+// message, and the usage of cmd, exiting with ExitCodeUsage.
+//
+// Reach for it in a handler that finds a problem with its arguments the
+// parser could not, such as an argument required only in some cases:
+//
+//	if plugin == "" {
+//		return climux.NewArgumentErrorf(nil, inv.Cmd, nil, "", "missing subcommand or PLUGIN")
+//	}
+//
+// cmd is usually inv.Cmd; if it is nil, Run prints the usage of the
+// command it was given. flag and arg name the flag and the argument at
+// fault, and may be nil and "". err, which may be nil, is wrapped and
+// printed after the message.
+func NewArgumentErrorf(err error, cmd *ir.Command, flag *ir.Flag, arg, format string, a ...any) *ir.ArgumentError {
+	return ir.NewArgumentErrorf(err, cmd, flag, arg, format, a...)
+}
+
 // humanMessage prefers a String() method over Error(). The two differ by
 // audience, not representation: on a ConfigError or ArgumentError from the
 // ir package, String() is the plain sentence Run prints for a human, and

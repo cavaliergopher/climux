@@ -403,9 +403,6 @@ func TestTerminatorEndsOptions(t *testing.T) {
 			if inv.Interrupt != nil {
 				t.Errorf("Interrupt = %v, want none", inv.Interrupt)
 			}
-			if len(inv.Forwarded) != 0 {
-				t.Errorf("Forwarded = %v, want empty", inv.Forwarded)
-			}
 		})
 	}
 }
@@ -427,25 +424,6 @@ func TestTerminatorSelectsSubcommand(t *testing.T) {
 		t.Errorf("Cmd = %v, want %v", got, want)
 	}
 	assertStrings(t, []string{"-rf"}, files)
-}
-
-// TestHelpWinsOverAnEarlierArgumentError asserts that a --help anywhere on
-// the command line is honored even when an earlier argument was wrong: help
-// no longer depends on position, so "app --bogus --help" prints help
-// instead of reporting --bogus. Before the lexer split this reported the
-// unrecognized option, since parsing stopped at the first error and never
-// reached --help.
-func TestHelpWinsOverAnEarlierArgumentError(t *testing.T) {
-	cmd := NewCommand("test", "").
-		Flags(String(new(string), "name", "", "")).
-		HelpFlag()
-	inv, err := Parse(cmd, "--bogus", "--help")
-	if err != nil {
-		t.Fatalf("Parse() = %v, want no error", err)
-	}
-	if got, want := inv.Interrupt.String(), "--help"; got != want {
-		t.Errorf("Interrupt = %v, want %v", got, want)
-	}
 }
 
 // TestPositionalIsNotAnOption asserts that a positional flag's name no
@@ -519,15 +497,18 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// TestTerminator asserts that "--" makes every later argument an operand,
+// however many dashes it starts with, including a second "--".
 func TestTerminator(t *testing.T) {
 	var foo string
 	var bar bool
+	var tail []string
 	cmd := NewCommand("test", "").
 		Flags(
 			String(&foo, "foo", "", ""),
 			Bool(&bar, "bar", false, ""),
-		).
-		ForwardArgs()
+			Strings(&tail, "arg", nil, "").Positional(),
+		)
 	tailArgs := []string{
 		"baz",
 		"--baz", "--baz=qux", "--baz", "qux",
@@ -535,13 +516,12 @@ func TestTerminator(t *testing.T) {
 		"--", "-", "",
 	}
 	args := append([]string{"--foo=foo", "--bar", "--"}, tailArgs...)
-	inv, err := Parse(cmd, args...)
-	if err != nil {
+	if _, err := Parse(cmd, args...); err != nil {
 		t.Fatal(err)
 	}
 	assertString(t, "foo", foo)
 	assertBool(t, true, bar)
-	assertStrings(t, tailArgs, inv.Forwarded)
+	assertStrings(t, tailArgs, tail)
 }
 
 // TestUnrecognizedOptionNamesMountedFlags asserts that the hint reaches a
@@ -655,59 +635,124 @@ func TestNegatedBoolIsNotAdvertised(t *testing.T) {
 	}
 }
 
-// TestInterruptFlagForwardsRemainder asserts that the token naming an
-// interrupt ends the parse and everything after it arrives on
-// Invocation.Forwarded verbatim, however it is spelled: options, a bare
-// "--", operands -- none of it is read.
-func TestInterruptFlagForwardsRemainder(t *testing.T) {
+// TestInterruptFlagReadsTheRest asserts that naming an interrupt does not
+// end the parse: what follows it on the line is read and bound as usual,
+// so "app --version --format=json" gets its format.
+func TestInterruptFlagReadsTheRest(t *testing.T) {
+	var format string
+	var topics []string
 	cmd := NewCommand("test", "").
-		Flags(Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
-			return nil
-		}))
-	inv, err := Parse(cmd, "--where", "extra", "--", "-x")
+		Flags(
+			Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
+				return nil
+			}),
+			String(&format, "format", "", ""),
+			Strings(&topics, "topic", nil, "").Positional(),
+		)
+	inv, err := Parse(cmd, "--where", "--format=json", "extra")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if inv.Interrupt == nil {
 		t.Fatal("Interrupt = nil, want the flag")
 	}
-	if got, want := strings.Join(inv.Forwarded, " "), "extra -- -x"; got != want {
-		t.Errorf("Forwarded = %q, want %q", got, want)
+	assertString(t, "json", format)
+	assertStrings(t, []string{"extra"}, topics)
+}
+
+// TestInterruptConcernsWhereItWasGiven asserts that a flag interrupting
+// without a value names the command it was given on, whatever the line
+// goes on to reach: "app --help sub" is help for app. A help flag that
+// means to take a topic is one that takes a value.
+func TestInterruptConcernsWhereItWasGiven(t *testing.T) {
+	build := func() *Command {
+		return NewCommand("app", "").HelpFlag().
+			Subcommands(NewCommand("sub", ""))
+	}
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--help", "sub"}, "app"},
+		{[]string{"sub", "--help"}, "app sub"},
+	} {
+		inv, err := Parse(build(), tt.args...)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tt.args, err)
+		}
+		if got := inv.Cmd.FullName; got != tt.want {
+			t.Errorf("Parse(%q).Cmd = %q, want %q", tt.args, got, tt.want)
+		}
 	}
 }
 
-// TestInterruptFlagForwardsNothing asserts that an interrupt with nothing
-// after it forwards nothing, rather than an empty slice standing in.
-func TestInterruptFlagForwardsNothing(t *testing.T) {
-	cmd := NewCommand("test", "").
-		Flags(Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
-			return nil
-		}))
-	inv, err := Parse(cmd, "--where")
-	if err != nil {
-		t.Fatal(err)
+// TestInterruptBindsItsValue asserts that a flag of any kind may interrupt
+// and still binds what it was given, so a help flag that takes a topic
+// reads the word after it as that topic rather than as a subcommand, and
+// its handler dispatches on it. Without the topic it is missing a value
+// like any other flag that takes one.
+func TestInterruptBindsItsValue(t *testing.T) {
+	var topic, got string
+	build := func() *Command {
+		topic, got = "", ""
+		return NewCommand("app", "").
+			Flags(
+				String(&topic, "help", "", "").Interrupt(
+					func(ctx context.Context, inv *Invocation) error {
+						got = topic
+						return nil
+					}),
+				String(new(string), "name", "", "").Required(),
+			).
+			Subcommands(NewCommand("deploy", ""))
 	}
-	if inv.Forwarded != nil {
-		t.Errorf("Forwarded = %v, want nil", inv.Forwarded)
+
+	if err := Dispatch(context.Background(), build(), WithArgs("--help", "deploy")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertString(t, "deploy", got)
+
+	_, err := Parse(build(), "--help")
+	if got, want := humanMessage(err), "option requires an argument: --help"; got != want {
+		t.Errorf("error = %q, want %q", got, want)
 	}
 }
 
-// TestInterruptCommandForwardsRemainder asserts the same rule for the
-// command tier: naming an interrupt command ends the parse, and the rest
-// of the line -- options a parse would reject included -- arrives on
-// Invocation.Forwarded for the handler to interpret.
-func TestInterruptCommandForwardsRemainder(t *testing.T) {
-	cmd := NewCommand("test", "").
-		Flags(String(new(string), "name", "", "").Required()).
-		Subcommands(VersionCommand("1.0"))
-	inv, err := Parse(cmd, "version", "deploy", "--json")
-	if err != nil {
-		t.Fatal(err)
+// TestInterruptForgivesOnlyWhatIsMissing asserts the one rule an interrupt
+// relaxes: a required argument left out is not an error, for a flag or a
+// command that interrupts alike, while a mistake the line did make is
+// still reported.
+func TestInterruptForgivesOnlyWhatIsMissing(t *testing.T) {
+	build := func() *Command {
+		return NewCommand("test", "").
+			HelpFlag().
+			Flags(String(new(string), "name", "", "").Required()).
+			Subcommands(VersionCommand("1.0"))
 	}
-	if got, want := inv.Cmd.FullName, "test version"; got != want {
-		t.Fatalf("Cmd = %q, want %q", got, want)
-	}
-	if got, want := strings.Join(inv.Forwarded, " "), "deploy --json"; got != want {
-		t.Errorf("Forwarded = %q, want %q", got, want)
+	for _, tt := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"FlagMissingRequired", []string{"--help"}, ""},
+		{"CommandMissingRequired", []string{"version"}, ""},
+		{"FlagBesideAnUnknownOption", []string{"--bogus", "--help"}, "unrecognized option: --bogus"},
+		{"CommandWithAnExtraOperand", []string{"version", "deploy"}, "extra operand: deploy"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse(build(), tt.args...)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Parse succeeded, want %q", tt.wantErr)
+			}
+			if got := err.Error(); !strings.Contains(got, tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", got, tt.wantErr)
+			}
+		})
 	}
 }

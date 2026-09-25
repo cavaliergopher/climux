@@ -22,37 +22,22 @@ import (
 func Complete(cmd *ir.Command, args []string, word string) ([]string, ir.CompDirective) {
 	res := lex(cmd, args)
 
-	var forwarded []string
-	var forwardedArgs bool
 	sources := make(map[*ir.Flag]ir.Source)
 	for _, instr := range res.instructions {
-		switch instr.kind {
-		case instSet:
-			// Best-effort: a value a CompleteFunc would reject outright is
-			// still worth setting, since completion is not validation.
-			_ = instr.flag.Set(instr.value)
-			// Recorded even when Set failed, for the same reason: what the
-			// line named is what a CompleteFunc is completing against.
-			sources[instr.flag] = ir.SourceArgs
-		case instForward:
-			forwarded = instr.forwarded
-			forwardedArgs = true
-		case instInterrupt:
-			// Nothing after an interrupt is read, so nothing after it
-			// is this tree's to complete.
-			return nil, ir.CompDefault
+		if instr.kind != instSet {
+			continue
 		}
-	}
-	if forwardedArgs {
-		// Once argv has crossed a ForwardArgs terminator, the rest belongs
-		// to whatever the command forwards to, not to this tree -- nothing
-		// here can say what completes it.
-		return nil, ir.CompDefault
+		// Best-effort: a value a CompleteFunc would reject outright is
+		// still worth setting, since completion is not validation.
+		_ = instr.flag.Set(instr.value)
+		// Recorded even when Set failed, for the same reason: what the
+		// line named is what a CompleteFunc is completing against.
+		sources[instr.flag] = ir.SourceArgs
 	}
 
 	// No environment variable is read here, so nothing a CompleteFunc
 	// sees reports ir.SourceEnv: completion answers what has been typed.
-	inv := invocationFor(res.active, forwarded, nil, sources)
+	inv := invocationFor(res.active, nil, sources)
 
 	cands, dir := completeCandidates(res, res.active.Ancestry, inv, word)
 	return finalizeCandidates(cands, word), dir

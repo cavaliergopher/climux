@@ -43,7 +43,7 @@ const (
 // be something a program remembers to switch on. Compile calls this once,
 // while lowering, so the result is what everything downstream reads;
 // nothing rebuilds it.
-func OptionsFor(names []string, positional, takesValue, interrupts bool) (named []string, claimed map[string]ir.Claim) {
+func OptionsFor(names []string, positional, takesValue, valueless bool) (named []string, claimed map[string]ir.Claim) {
 	if positional || len(names) == 0 {
 		return nil, nil
 	}
@@ -56,7 +56,7 @@ func OptionsFor(names []string, positional, takesValue, interrupts bool) (named 
 		}
 		claimed[named[i]] = ir.Claim{Source: named[i]}
 	}
-	if negatable(positional, takesValue, interrupts) {
+	if negatable(positional, takesValue, valueless) {
 		for _, option := range named {
 			if negation := negationOf(option); negation != "" {
 				claimed[negation] = ir.Claim{Source: option, Effect: effectNegate}
@@ -81,11 +81,11 @@ func negationOf(option string) string {
 
 // negatable reports whether this dialect writes a negation for a flag of
 // this shape: a boolean option. A flag that takes a value has no opposite
-// to name, a positional argument answers to no option at all, and an
-// interrupt binds nothing that could be set either way, so none of the
-// three has one.
-func negatable(positional, takesValue, interrupts bool) bool {
-	return !positional && !takesValue && !interrupts
+// to name, a positional argument answers to no option at all, and a flag
+// bound to no value has nothing that could be set either way, so none of
+// the three has one.
+func negatable(positional, takesValue, valueless bool) bool {
+	return !positional && !takesValue && !valueless
 }
 
 // generatedFrom returns the declared option that option was generated

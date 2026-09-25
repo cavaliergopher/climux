@@ -493,33 +493,33 @@ func ExampleCommand_Description() {
 	// Print more than once with -n.
 }
 
-func ExampleCommand_ForwardArgs() {
+func ExampleFlag_EndOfOptions() {
 	var verbose bool
+	var args []string
 
-	// create a command that forwards arguments to another program
+	// create a command that hands its arguments to another program
 	cmd := NewCommand("echo_wrapper", "wraps the echo command").
 		Flags(
 			Bool(&verbose, "v", false, "Print verbose output"),
+			// once the first argument is taken, options have ended, so
+			// echo's own options reach it rather than echo_wrapper
+			Strings(&args, "arg", nil, "Arguments to pass to echo").
+				Positional().
+				EndOfOptions(),
 		).
-		ForwardArgs(). // enable the "--" terminator
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			// read verbose argument which was parsed by climux
 			if verbose {
-				fmt.Printf("+ echo %s\n", strings.Join(inv.Forwarded, " "))
+				fmt.Printf("+ echo %s\n", strings.Join(args, " "))
 			}
-
-			// inv.Forwarded holds everything after the "--" terminator,
-			// untouched by the parser, ready to hand to the wrapped
-			// program
-			fmt.Println(strings.Join(inv.Forwarded, " "))
+			fmt.Println(strings.Join(args, " "))
 			return nil
 		})
 
-	// run in verbose mode and pass ["Hello,", "World!"] through the terminator
-	Run(context.Background(), cmd, WithArgs("-v", "--", "Hello,", "World!"))
+	// -v is echo_wrapper's; -n comes after the first argument, so it is echo's
+	Run(context.Background(), cmd, WithArgs("-v", "Hello,", "World!", "-n"))
 	// Output:
-	// + echo Hello, World!
-	// Hello, World!
+	// + echo Hello, World! -n
+	// Hello, World! -n
 }
 
 func TestCompileRoot(t *testing.T) {
@@ -801,12 +801,136 @@ func TestSiblingFlagReuse(t *testing.T) {
 	assertBool(t, true, pushForce)
 }
 
-func TestValidatePositionalWithSubcommands(t *testing.T) {
-	var a string
-	cmd := NewCommand("test", "").
-		Flags(String(&a, "foo", "", "").Positional()).
-		Subcommands(NewCommand("sub", ""))
-	assertParseError(t, cmd, "positional flag alongside subcommands")
+// TestFirstOperandDecides asserts how a command that declares both
+// subcommands and positionals reads its operands. The first chooses: a
+// word naming a subcommand dispatches, and any other binds the first
+// positional. Once one has bound, a word naming a subcommand is data
+// until every positional is full. Dispatch starts the choice over, so a
+// subcommand's first operand chooses again.
+func TestFirstOperandDecides(t *testing.T) {
+	var tr tracer
+	var region, plugin, target string
+	var rest []string
+	noArgs := func() {
+		tr.steps, region, plugin, target, rest = nil, "", "", "", nil
+	}
+	// docker's shape: its own commands beside a plugin catch whose
+	// unbounded tail never fills.
+	docker := func() *Command {
+		return NewCommand("docker", "").
+			Flags(
+				String(&plugin, "PLUGIN", "", "").Positional().EndOfOptions(),
+				Strings(&rest, "ARG", nil, "").Positional(),
+			).
+			Subcommands(NewCommand("run", "").HandleFunc(tr.handler("run", nil))).
+			HandleFunc(tr.handler("docker", nil))
+	}
+	// A bounded positional ahead of a subcommand, whose own first operand
+	// chooses again after dispatch.
+	app := func() *Command {
+		return NewCommand("app", "").
+			Flags(String(&region, "REGION", "", "").Positional()).
+			Subcommands(NewCommand("deploy", "").
+				Flags(String(&target, "TARGET", "", "").Positional()).
+				Subcommands(NewCommand("canary", "").HandleFunc(tr.handler("canary", nil))).
+				HandleFunc(tr.handler("deploy", nil))).
+			HandleFunc(tr.handler("app", nil))
+	}
+
+	for _, tt := range []struct {
+		name  string
+		cmd   func() *Command
+		args  []string
+		steps string
+		check func(t *testing.T)
+	}{
+		{"FirstNamesASubcommand", docker, []string{"run"}, "run", nil},
+		{"FirstBindsThenANameIsData", docker, []string{"compose", "run", "web"}, "docker",
+			func(t *testing.T) {
+				assertString(t, "compose", plugin)
+				assertStrings(t, []string{"run", "web"}, rest)
+			}},
+		{"TerminatorLeavesTheChoice", docker, []string{"--", "run"}, "run", nil},
+		{"LookupResumesWhenFull", app, []string{"us-east-1", "deploy"}, "deploy",
+			func(t *testing.T) { assertString(t, "us-east-1", region) }},
+		{"DispatchStartsTheChoiceOver", app, []string{"us-east-1", "deploy", "canary"}, "canary", nil},
+		{"SubcommandFirstOperandBinds", app, []string{"deploy", "prod"}, "deploy",
+			func(t *testing.T) { assertString(t, "prod", target) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			noArgs()
+			if err := Dispatch(context.Background(), tt.cmd(), WithArgs(tt.args...)); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got, want := tr.String(), tt.steps; got != want {
+				t.Errorf("steps = %q, want %q", got, want)
+			}
+			if tt.check != nil {
+				tt.check(t)
+			}
+		})
+	}
+}
+
+// TestEndOfOptionsIsTheAuthorsTerminator asserts that an argument which
+// ends option processing does what a user's "--" does, from the point it
+// takes its token, and that a user may still write one earlier.
+func TestEndOfOptionsIsTheAuthorsTerminator(t *testing.T) {
+	var verbose bool
+	var image, command string
+	var args []string
+	build := func() *Command {
+		verbose, image, command, args = false, "", "", nil
+		return NewCommand("run", "").
+			Flags(
+				Bool(&verbose, "verbose", false, "").Aliases("v"),
+				String(&image, "IMAGE", "", "").Positional().Required().EndOfOptions(),
+				String(&command, "COMMAND", "", "").Positional(),
+				Strings(&args, "ARG", nil, "").Positional(),
+			).
+			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
+	}
+
+	for _, tt := range []struct {
+		name        string
+		args        []string
+		wantVerbose bool
+		wantImage   string
+		wantCommand string
+		wantArgs    []string
+	}{
+		{"BeforeTheBoundary", []string{"-v", "alpine", "ls"}, true, "alpine", "ls", nil},
+		{"DashedTokenPastIt", []string{"alpine", "ls", "-la"}, false, "alpine", "ls", []string{"-la"}},
+		{"ParentsOwnFlagPastIt", []string{"alpine", "-v"}, false, "alpine", "-v", nil},
+		{"TerminatorPastItIsData", []string{"alpine", "--", "-v"}, false, "alpine", "--", []string{"-v"}},
+		{"UserMayEndItEarlier", []string{"--", "-v", "ls"}, false, "-v", "ls", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Dispatch(context.Background(), build(), WithArgs(tt.args...)); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got, want := verbose, tt.wantVerbose; got != want {
+				t.Errorf("verbose = %v, want %v", got, want)
+			}
+			if got, want := image, tt.wantImage; got != want {
+				t.Errorf("IMAGE = %q, want %q", got, want)
+			}
+			if got, want := command, tt.wantCommand; got != want {
+				t.Errorf("COMMAND = %q, want %q", got, want)
+			}
+			if !slices.Equal(args, tt.wantArgs) {
+				t.Errorf("ARG = %q, want %q", args, tt.wantArgs)
+			}
+		})
+	}
+}
+
+// TestEndOfOptionsIsPositionalOnly asserts that an option cannot end
+// option processing: there is no place on the line for it to end at.
+func TestEndOfOptionsIsPositionalOnly(t *testing.T) {
+	assertParseError(t, NewCommand("test", "").
+		Flags(String(new(string), "name", "", "").EndOfOptions()),
+		"only a positional argument may end option processing")
 }
 
 func TestValidatePositionalAfterUnbounded(t *testing.T) {
@@ -1244,17 +1368,22 @@ func TestInvocationPath(t *testing.T) {
 // the command tree. Parsing one tree twice is what exposes a write-back,
 // so this does deliberately what a program must not.
 func TestParseIsNotWrittenBack(t *testing.T) {
-	cmd := NewCommand("test", "").ForwardArgs()
-	first, err := Parse(cmd, "--", "one")
+	cmd := NewCommand("test", "").
+		Flags(String(new(string), "name", "", ""))
+	first, err := Parse(cmd, "--name=one")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Parse(cmd, "--", "two")
+	second, err := Parse(cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertStrings(t, []string{"one"}, first.Forwarded)
-	assertStrings(t, []string{"two"}, second.Forwarded)
+	if got, want := len(first.Sources), 1; got != want {
+		t.Errorf("first parse sources = %d, want %d", got, want)
+	}
+	if got, want := len(second.Sources), 0; got != want {
+		t.Errorf("second parse sources = %d, want %d", got, want)
+	}
 }
 
 // TestRunExitCodes asserts the contract Run documents: 0 for success or
@@ -1583,12 +1712,12 @@ func TestRunIgnoresWriteFailures(t *testing.T) {
 }
 
 // TestHandlerReceivesInvocation asserts that a handler is told how it was
-// called: which command ran, the path it was reached by, and the arguments
-// after the terminator.
+// called: which command ran, and the path it was reached by.
 func TestHandlerReceivesInvocation(t *testing.T) {
 	var got *Invocation
+	var remotes []string
 	add := NewCommand("add", "").
-		ForwardArgs().
+		Flags(Strings(&remotes, "remote", nil, "").Positional()).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			got = inv
 			return nil
@@ -1596,7 +1725,7 @@ func TestHandlerReceivesInvocation(t *testing.T) {
 	app := NewCommand("myapp", "").
 		Subcommands(NewCommand("remote", "").Subcommands(add))
 
-	args := []string{"remote", "add", "--", "origin"}
+	args := []string{"remote", "add", "origin"}
 	if code := Run(context.Background(), app, WithArgs(args...)); code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
@@ -1604,7 +1733,7 @@ func TestHandlerReceivesInvocation(t *testing.T) {
 		t.Fatal("handler was not called")
 	}
 	assertString(t, "myapp remote add", got.Cmd.FullName)
-	assertStrings(t, []string{"origin"}, got.Forwarded)
+	assertStrings(t, []string{"origin"}, remotes)
 	if want := add.String(); got.Cmd.String() != want {
 		t.Errorf("Cmd = %v, want %v", got.Cmd, want)
 	}
@@ -1656,28 +1785,6 @@ func TestInterruptRunsInPlaceOfTheHandler(t *testing.T) {
 	}
 	if got, want := ran, "test sub"; got != want {
 		t.Errorf("ran = %q, want %q", got, want)
-	}
-}
-
-// TestInterruptWinsOverAWrongCommandLine asserts that the rule --help has
-// always kept belongs to every interrupt: what it reports does not depend
-// on the rest of the line being right, so a typo beside it is discarded
-// rather than reported instead.
-func TestInterruptWinsOverAWrongCommandLine(t *testing.T) {
-	var ran bool
-	cmd := NewCommand("test", "").
-		Flags(
-			String(new(string), "name", "", "").Required(),
-			Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
-				ran = true
-				return nil
-			}),
-		)
-	if code, _, stderr := runCaptured(cmd, "--bogus", "--where"); code != 0 {
-		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr)
-	}
-	if !ran {
-		t.Error("the interrupt did not run")
 	}
 }
 
@@ -2181,40 +2288,6 @@ func TestRunCompilesOnce(t *testing.T) {
 	}
 }
 
-// TestInterruptCommandDeclaresNothing asserts that flags and subcommands
-// on an interrupt command are configuration errors: everything after its
-// name is forwarded unparsed, so there is nothing for either to do.
-func TestInterruptCommandDeclaresNothing(t *testing.T) {
-	noop := func(ctx context.Context, inv *Invocation) error { return nil }
-	for _, tt := range []struct {
-		name   string
-		cmd    *Command
-		reason string
-	}{
-		{
-			name:   "Flags",
-			cmd:    InterruptCommand("where", "", noop).Flags(Bool(new(bool), "loud", false, "")),
-			reason: "an interrupt command declares no flags",
-		},
-		{
-			name:   "Subcommands",
-			cmd:    InterruptCommand("where", "", noop).Subcommands(NewCommand("sub", "")),
-			reason: "an interrupt command declares no subcommands",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			root := NewCommand("test", "").Subcommands(tt.cmd)
-			_, err := root.Compile()
-			if err == nil {
-				t.Fatal("Compile succeeded, want a configuration error")
-			}
-			if got := err.Error(); !strings.Contains(got, tt.reason) {
-				t.Errorf("error = %q, want it to contain %q", got, tt.reason)
-			}
-		})
-	}
-}
-
 // TestInterruptCommandRunsBare asserts the constructor's whole contract in
 // one line: under a root with a required flag and middleware, the
 // interrupt answers without the flag and outside the wrapper.
@@ -2240,56 +2313,6 @@ func TestInterruptCommandRunsBare(t *testing.T) {
 	}
 	if wrapped {
 		t.Error("middleware wrapped the interrupt")
-	}
-}
-
-// TestForwardedNamingRules asserts the two configuration errors around
-// naming forwarded arguments: only a command that forwards may name
-// them, and an explanation needs a name to be shown by.
-func TestForwardedNamingRules(t *testing.T) {
-	noop := func(ctx context.Context, inv *Invocation) error { return nil }
-	assertParseError(t, NewCommand("test", "").Forwarded("cmd", "what to run"),
-		"only a command that forwards arguments may name them")
-	assertParseError(t, NewCommand("test", "").ForwardArgs().Forwarded("", "orphan explanation"),
-		"forwarded arguments need a value name to be shown by")
-
-	for _, ok := range []*Command{
-		NewCommand("test", "").ForwardArgs().Forwarded("cmd", "what to run"),
-		NewCommand("test", "").Subcommands(
-			InterruptCommand("about", "", noop).Forwarded("topic", "what to explain")),
-	} {
-		if _, err := ok.Compile(); err != nil {
-			t.Errorf("Compile: unexpected error: %v", err)
-		}
-	}
-}
-
-// TestDescribeForwarded asserts a named forwarding lands in the document
-// with the value name written for a reader, and an unnamed one is absent
-// rather than empty.
-func TestDescribeForwarded(t *testing.T) {
-	root := NewCommand("test", "").ForwardArgs().Forwarded("cmd", "what to run")
-	node, err := root.Compile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fwd := node.Describe().Forwarded
-	if fwd == nil {
-		t.Fatal("Forwarded = nil, want the named forwarding")
-	}
-	if got, want := fwd.ValueName, "CMD"; got != want {
-		t.Errorf("ValueName = %q, want %q", got, want)
-	}
-	if got, want := fwd.Usage, "what to run"; got != want {
-		t.Errorf("Usage = %q, want %q", got, want)
-	}
-
-	bare, err := NewCommand("test", "").ForwardArgs().Compile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fwd := bare.Describe().Forwarded; fwd != nil {
-		t.Errorf("Forwarded = %+v, want nil", fwd)
 	}
 }
 

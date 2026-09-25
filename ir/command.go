@@ -18,29 +18,10 @@ type Invocation struct {
 	// Cmd is the command the arguments named.
 	Cmd *Command
 
-	// Forwarded holds the arguments the parser deliberately left
-	// unparsed: everything after a "--" terminator, for a command that
-	// opted in with Command.ForwardArgs, or everything after the token
-	// that ended the parse, when an interrupt flag or an interrupt
-	// command did. It is empty otherwise.
-	//
-	// This is not the command's operands, which bind to positional flags
-	// as usual. These are the arguments left for the handler to
-	// interpret or ignore: what a forwarding command hands on to
-	// something else, or what follows an interrupt, verbatim.
-	Forwarded []string
-
-	// Interrupt is the flag that ended the parse, and is nil both when
-	// the whole command line was read and when Cmd is itself an
-	// interrupt command; see Command.Interrupt. Its Handler runs in
-	// place of Cmd's, which is the command that was active when the flag
-	// was given -- the one whose help is printed when the flag is the
-	// one asking for it.
-	//
-	// The rest of the command line is not parsed and the flag rules are
-	// not checked, so an interrupt answers even on an otherwise incomplete
-	// command line; what followed the flag arrives in Forwarded. See
-	// Flag.Handler.
+	// Interrupt is the first interrupt flag the command line gave, or nil
+	// if it gave none. Cmd is then the command it was given on, whose
+	// handler it runs in place of -- the one whose help is printed when
+	// the flag is the one asking for it. See Flag.Handler.
 	Interrupt *Flag
 
 	// Sources records where the value each flag holds came from, for
@@ -53,12 +34,9 @@ type Invocation struct {
 	// is unique only along one path; Source and IsSet answer by name,
 	// resolving it against the commands in scope first. It is never nil.
 	//
-	// An interrupt ends the parse where it was given, so what is
-	// recorded then is the flags given before it and nothing after, and
-	// no environment variable at all. The interrupt itself is recorded
-	// as SourceArgs even though it binds no value, because the command
-	// line named it and asking whether it was given is the one question
-	// worth answering about it. See Interrupt.
+	// An interrupt is recorded as SourceArgs even though it binds no
+	// value, because the command line named it and asking whether it was
+	// given is the one question worth answering about it. See Interrupt.
 	Sources map[*Flag]Source
 
 	// Stdin, Stdout and Stderr are the streams the handler should use in
@@ -191,8 +169,7 @@ func (s Source) String() string {
 // that does anything cancelable should honor it.
 //
 // inv describes the invocation: the command that was named, the path it was
-// reached by, any arguments forwarded past a "--" terminator, and the
-// streams to work with. A handler should read inv.Stdin and write
+// reached by, and the streams to work with. A handler should read inv.Stdin and write
 // inv.Stdout and inv.Stderr rather than the process streams, so that a
 // caller that redirects the command captures its output too. Nothing
 // enforces it; a handler that reaches for os.Stdout simply escapes the
@@ -217,31 +194,19 @@ type Command struct {
 	Summary     string
 	Description string
 	Hidden      bool
-	ForwardArgs bool
 
-	// Interrupt, if set, is what makes the command an interrupt, and
-	// runs in place of Handler: invoking the command ends the parse the
-	// way an interrupt flag does, and a check that would otherwise fail
-	// the command line -- a required flag missing, an argument count
-	// unmet, an option nothing recognizes -- does not stop it from
-	// answering. No middleware wraps it. Nil means the command is not
-	// an interrupt. See climux.InterruptCommand.
-	Interrupt HandlerFunc
+	// Interrupts reports that the command answers the way an interrupt
+	// flag does: a required argument left out does not stop it running,
+	// and no middleware wraps it. Every other rule of the command line
+	// still holds. What it runs is Handler, like any other command. See
+	// climux.InterruptCommand.
+	Interrupts bool
 
 	// FullName is the command's name joined with each ancestor's, from the
 	// root down, so a deep subcommand reads as "app remote add" rather
 	// than the bare "add" that String returns. Compile computes it top
 	// down while lowering.
 	FullName string
-
-	// ForwardedValueName and ForwardedUsage name and explain the
-	// arguments the command forwards to its handler unparsed -- what
-	// follows an interrupt command's name, or a ForwardArgs command's
-	// "--" terminator. Both arrive already written for a reader, and
-	// both are empty when the program named nothing; a command may
-	// forward without naming what it forwards.
-	ForwardedValueName string
-	ForwardedUsage     string
 
 	FlagGroups  []*FlagGroup
 	Subcommands []*Command
@@ -272,9 +237,8 @@ type Command struct {
 	// arrives here already wrapped in the wrappers its program put around
 	// it, and a command that declared no handler of its own gets one
 	// reporting a usage error, since such a command exists only to group
-	// its subcommands. Calling it is how a command is run -- unless the
-	// command is an interrupt, in which case Interrupt runs instead and
-	// this is never called.
+	// its subcommands. Calling it is how a command is run, whether or
+	// not the command interrupts; see Interrupts.
 	Handler HandlerFunc
 
 	// UsageFunc renders this command's help message in place of the
@@ -326,13 +290,6 @@ func (c *Command) Describe() *desc.Command {
 		Summary:     c.Summary,
 		Description: c.Description,
 		Hidden:      c.Hidden,
-		ForwardArgs: c.ForwardArgs,
-	}
-	if c.ForwardedValueName != "" {
-		cmd.Forwarded = &desc.Forwarded{
-			ValueName: c.ForwardedValueName,
-			Usage:     c.ForwardedUsage,
-		}
 	}
 	for _, group := range c.FlagGroups {
 		cmd.FlagGroups = append(cmd.FlagGroups, group.Describe())

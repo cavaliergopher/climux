@@ -44,6 +44,7 @@ type Flag struct {
 
 	showDefault  bool
 	positional   bool
+	endOfOptions bool
 	minCount     int
 	maxCount     int
 	hidden       bool
@@ -58,8 +59,9 @@ type Flag struct {
 	// one imported with FromFlagSet. See ir.Kind.
 	kind ir.Kind
 
-	// handlerFunc is what an interrupt runs, and is nil for every flag
-	// that binds a value instead. See Interrupt.
+	// handlerFunc is what the flag runs in place of the command's handler
+	// when the line names it, which is what makes it an interrupt. See
+	// Flag.Interrupt.
 	handlerFunc HandlerFunc
 
 	// origin is this declaration's identity, minted once here and copied
@@ -225,17 +227,18 @@ func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
 	return c
 }
 
-// Interrupt returns a Flag that stops the command line being read and
-// runs fn, in place of the handler of whichever command was named:
+// Interrupt returns a Flag that runs fn in place of the handler of
+// whichever command was named, without its middleware:
 //
 //	Interrupt("version", "Show the version and exit", printVersion)
 //
-// Nothing after it on the command line is read and nothing the line said
-// is checked, so an interrupt answers even a command line that is wrong
-// somewhere else. That is what lets "app --bogus --help" print help
-// rather than report the typo.
+// The rest of the command line is read and checked as usual, except that
+// an argument the command requires may be left out. That is what lets
+// "app --help" answer someone who does not yet know what is required,
+// while "app --version --format=json" still binds its format.
 //
-// The flag takes no value and is given by name alone. See HelpFlag and
+// The flag takes no value and is given by name alone; Flag.Interrupt
+// makes a flag of any other kind an interrupt. See HelpFlag and
 // VersionFlag for the two every program tends to want.
 func Interrupt(name, usage string, fn HandlerFunc) *Flag {
 	return &Flag{
@@ -349,10 +352,49 @@ func (c *Flag) ValueName(name string) *Flag {
 }
 
 // Positional indicates that this flag is a positional argument, and therefore
-// has no "-" or "--" delimiter. You cannot specify both positional arguments
-// and subcommands.
+// has no "-" or "--" delimiter.
+//
+// A command may declare positional arguments and subcommands together. Its
+// first operand decides between them: a word naming a subcommand runs it,
+// and any other word binds the first positional argument, after which every
+// word binds a positional argument until they are all full.
 func (c *Flag) Positional() *Flag {
 	c.positional = true
+	return c
+}
+
+// EndOfOptions treats every argument after this one as an argument
+// rather than a flag, even if it begins with a dash, as if the user had
+// typed "--" after it.
+//
+// Use it for a command that passes the rest of its command line to
+// another program, so that program's flags reach it instead of being
+// read as this command's own:
+//
+//	String(&image, "IMAGE", "", usage).Positional().EndOfOptions()
+//	Strings(&args, "ARG", nil, usage).Positional()
+//
+//	docker run -it alpine ls -la   ->  -it is run's; IMAGE=alpine; ARG=["ls", "-la"]
+//
+// Only a positional argument may use it.
+func (c *Flag) EndOfOptions() *Flag {
+	c.endOfOptions = true
+	return c
+}
+
+// Interrupt makes the flag an interrupt: naming it runs fn in place of
+// the handler of the command it was given on, without that command's
+// middleware, and excuses any argument the line was required to give. The
+// flag still binds its value, so fn can read it.
+//
+//	String(&topic, "help", "", "Show help for a topic").Interrupt(showHelp)
+//
+//	app --help deploy   ->  showHelp runs, with topic "deploy"
+//
+// The package-level Interrupt builds the common case, a flag that takes
+// no value at all. A positional argument may not interrupt.
+func (c *Flag) Interrupt(fn HandlerFunc) *Flag {
+	c.handlerFunc = fn
 	return c
 }
 
@@ -439,8 +481,8 @@ func (c *Flag) Complete(fn ir.CompleteFunc) *Flag {
 // that was not in scope for inv at all reports SourceDefault, which is
 // the one answer worth asking InScope about.
 //
-// An interrupt reports SourceArgs when it is the flag that ended the
-// parse. It binds no value, so that is the whole of what it has to say.
+// An interrupt the line named reports SourceArgs, even one that takes no
+// value.
 func (c *Flag) SourceIn(inv *Invocation) Source {
 	flag := inv.Resolve(c.origin)
 	if flag == nil {
@@ -475,16 +517,15 @@ func (c *Flag) InScope(inv *Invocation) bool {
 // rest of flag configuration is not checked here; see ir.Flag's own
 // validation, which Compile runs over the whole lowered tree.
 func (c *Flag) lower(errs *[]error) *ir.Flag {
-	// An interrupt is named and never given a value, so it is not
-	// written as if it took one, whatever it is bound to -- which is
-	// nothing.
-	takesValue := c.handlerFunc == nil && (c.positional || !isBoolValue(c.value))
+	// A flag bound to no value is named and never given one, so it is not
+	// written as if it took one.
+	takesValue := c.value != nil && (c.positional || !isBoolValue(c.value))
 	// How a flag is written down is the command line's question rather
 	// than this package's, in both halves of it, so what it declared goes
 	// over and the answers come back whole: which options it has and
 	// which it only answers to, and what its value is called, including
 	// when the answer is none. See ir.Flag.
-	namedOptions, claimedOptions := argv.OptionsFor(c.names, c.positional, takesValue, c.handlerFunc != nil)
+	namedOptions, claimedOptions := argv.OptionsFor(c.names, c.positional, takesValue, c.value == nil)
 	valueName := argv.ValueNameFor(canonicalName(c.names), c.valueName, c.positional, takesValue)
 	flag := &ir.Flag{
 		Origin:         c.origin,
@@ -497,6 +538,7 @@ func (c *Flag) lower(errs *[]error) *ir.Flag {
 		Default:        c.defValue,
 		ShowDefault:    c.showDefault,
 		Positional:     c.positional,
+		EndOfOptions:   c.endOfOptions,
 		Hidden:         c.hidden,
 		MinCount:       c.minCount,
 		MaxCount:       c.maxCount,

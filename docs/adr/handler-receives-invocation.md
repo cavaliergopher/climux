@@ -12,9 +12,9 @@ The v0 handler signature was `func(args []string) int`, and the first draft
 of the execution model kept its shape as
 `func(ctx context.Context, args []string) error`. Two problems with it:
 
-- `args` holds only what follows a `--` terminator, so it is empty for every
-  command that does not set `ForwardArgs`. The signature spends its one
-  payload parameter on a minority feature.
+- `args` held only the arguments the parser left unread, so it was empty
+  for nearly every command. The signature spent its one payload parameter
+  on a minority feature.
 - A handler cannot learn where it is mounted. Its own path is decided in
   another package, after registration, by someone who may not be its author.
   Closing over the path when the command is constructed only works when the
@@ -22,8 +22,8 @@ of the execution model kept its shape as
   exactly that workaround, and Terraform pays it.
 
 Meanwhile `Parse` had just been changed to return an
-`*Invocation{Cmd, Path, Forwarded}`, which `Run` was deconstructing in order to
-pass `Args` alone. The information was being assembled and then discarded.
+`*Invocation`, which `Run` was deconstructing in order to pass `Args`
+alone. The information was being assembled and then discarded.
 
 The alternative considered was to leave the signature at `(ctx, args)` and
 attach the invocation to the context, with a `FromContext` accessor. Its
@@ -45,9 +45,6 @@ The invocation is passed as a parameter, not carried in the context.
 - `FromContext` would have to answer for a context that never passed through
   `Run` and return nil or a zero value that lies. Tests, where handlers are
   called with a bare context, are where that bites.
-- Reaching the forwarded arguments both from the parameter and from the
-  invocation would be
-  one representation twice, which the data model exists to avoid.
 - The signature is breaking in this release regardless, so the parameter
   costs nothing now and would cost compatibility after v1.
 

@@ -138,7 +138,7 @@ func Dispatch(ctx context.Context, cmd *Command, opts ...RunOption) error {
 // it again with the same tree is not supported.
 //
 // If an interrupt such as --help was given, the returned Invocation names
-// it and nothing after it was checked.
+// it, and an argument the line left out is not reported.
 //
 // The Invocation's streams are the process's, since Parse runs nothing
 // that would write to them. See Run to read and write somewhere else.
@@ -185,9 +185,6 @@ func dispatch(ctx context.Context, cmd *ir.Command, cfg *runConfig) error {
 	inv.Stdin, inv.Stdout, inv.Stderr = cfg.stdin, cfg.stdout, cfg.stderr
 	if inv.Interrupt != nil {
 		return inv.Interrupt.Handler(ctx, inv)
-	}
-	if inv.Cmd.Interrupt != nil {
-		return inv.Cmd.Interrupt(ctx, inv)
 	}
 	return inv.Cmd.Handler(ctx, inv)
 }

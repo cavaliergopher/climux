@@ -111,13 +111,6 @@ func printUsage(w io.Writer, cmd *Command) error {
 			}
 		}
 	}
-	if cmd.ForwardedValueName != "" {
-		if cmd.ForwardArgs {
-			fmt.Fprintf(&b, " [-- %s...]", cmd.ForwardedValueName)
-		} else {
-			fmt.Fprintf(&b, " [%s...]", cmd.ForwardedValueName)
-		}
-	}
 	b.WriteString("\n")
 	_, err := io.WriteString(w, b.String())
 	return err
@@ -125,7 +118,7 @@ func printUsage(w io.Writer, cmd *Command) error {
 
 func detailPositionals(w io.Writer, cmd *Command) error {
 	flags := getPositionals(cmd)
-	if len(flags) == 0 && cmd.ForwardedValueName == "" {
+	if len(flags) == 0 {
 		return nil
 	}
 	if _, err := fmt.Fprintf(w, "\nPositional arguments:\n"); err != nil {
@@ -140,19 +133,6 @@ func detailPositionals(w io.Writer, cmd *Command) error {
 			if flag.ShowDefault {
 				fmt.Fprintf(&row, " (default: %s)", flag.Default)
 			}
-		}
-		row.WriteString("\n")
-		if _, err := io.WriteString(tw, row.String()); err != nil {
-			return err
-		}
-	}
-	// The forwarded arguments detail beneath the positionals they follow
-	// on the line itself. They are one row however many arrive.
-	if cmd.ForwardedValueName != "" {
-		var row strings.Builder
-		fmt.Fprintf(&row, "  %s", cmd.ForwardedValueName)
-		if cmd.ForwardedUsage != "" {
-			fmt.Fprintf(&row, "\t%s", cmd.ForwardedUsage)
 		}
 		row.WriteString("\n")
 		if _, err := io.WriteString(tw, row.String()); err != nil {

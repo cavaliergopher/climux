@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"slices"
 	"testing"
 
 	"go.hotsrc.dev/climux/ir"
@@ -13,18 +12,17 @@ import (
 // lexStep is a comparable projection of one instruction, so a golden test
 // can assert against it without comparing pointers.
 type lexStep struct {
-	kind      instructionKind
-	flag      string // how the flag names itself, e.g. "--name" or "OPERAND"
-	value     string
-	attached  bool
-	cmd       string // dispatch, interrupt: the target command's name
-	forwarded []string
+	kind     instructionKind
+	flag     string // how the flag names itself, e.g. "--name" or "OPERAND"
+	value    string
+	attached bool
+	cmd      string // dispatch, interrupt: the target command's name
 }
 
 func summarize(instrs []instruction) []lexStep {
 	steps := make([]lexStep, len(instrs))
 	for i, instr := range instrs {
-		s := lexStep{kind: instr.kind, value: instr.value, attached: instr.attached, forwarded: instr.forwarded}
+		s := lexStep{kind: instr.kind, value: instr.value, attached: instr.attached}
 		if instr.flag != nil {
 			s.flag = instr.flag.String()
 		}
@@ -58,8 +56,7 @@ func humanMessage(err error) string {
 
 func (s lexStep) equal(o lexStep) bool {
 	return s.kind == o.kind && s.flag == o.flag && s.value == o.value &&
-		s.attached == o.attached && s.cmd == o.cmd &&
-		slices.Equal(s.forwarded, o.forwarded)
+		s.attached == o.attached && s.cmd == o.cmd
 }
 
 func assertLexSteps(t *testing.T, want, got []lexStep) {
@@ -104,7 +101,8 @@ func opt(names ...string) *ir.Flag { return newOpt(names, false) }
 // valueOpt is newOpt for a flag that takes a value.
 func valueOpt(names ...string) *ir.Flag { return newOpt(names, true) }
 
-// interruptOpt is newOpt for an interrupt, the flag that ends the parse.
+// interruptOpt is newOpt for an interrupt, the flag that runs in place of
+// the command's handler.
 // The handler is never called here -- lex only ever reads whether there
 // is one -- but it is what makes the flag an interrupt, so the fixture
 // declares one.
@@ -362,20 +360,6 @@ func TestLex(t *testing.T) {
 			[]string{"extra operand: -rf"},
 		},
 		{
-			"TerminatorForwardsInsteadWhenOptedIn",
-			func() *ir.Command {
-				c := lexOptTree()
-				c.ForwardArgs = true
-				return c
-			},
-			[]string{"--name=x", "--", "-y", "z"},
-			[]lexStep{
-				{kind: instSet, flag: "--name", value: "x", attached: true},
-				{kind: instForward, forwarded: []string{"-y", "z"}},
-			},
-			nil,
-		},
-		{
 			"HelpAlone",
 			lexOptTree, []string{"--help"},
 			[]lexStep{{kind: instInterrupt, flag: "--help", cmd: "app"}},
@@ -388,7 +372,7 @@ func TestLex(t *testing.T) {
 			nil,
 		},
 		{
-			"HelpWinsOverAnEarlierError",
+			"HelpBesideAnEarlierError",
 			lexOptTree, []string{"--bogus", "--help"},
 			[]lexStep{{kind: instInterrupt, flag: "--help", cmd: "app"}},
 			[]string{"unrecognized option: --bogus"},
@@ -400,11 +384,29 @@ func TestLex(t *testing.T) {
 			[]string{"extra operand: -h"},
 		},
 		{
-			"InterruptEndsAShortCluster",
+			"InterruptInAShortCluster",
 			lexOptTree, []string{"-vh"},
 			[]lexStep{
 				{kind: instSet, flag: "--verbose", value: "true"},
 				{kind: instInterrupt, flag: "--help", cmd: "app"},
+			},
+			nil,
+		},
+		{
+			"InterruptLeavesTheClusterReading",
+			lexOptTree, []string{"-hv"},
+			[]lexStep{
+				{kind: instInterrupt, flag: "--help", cmd: "app"},
+				{kind: instSet, flag: "--verbose", value: "true"},
+			},
+			nil,
+		},
+		{
+			"InterruptLeavesTheLineReading",
+			lexOptTree, []string{"--help", "--name=x"},
+			[]lexStep{
+				{kind: instInterrupt, flag: "--help", cmd: "app"},
+				{kind: instSet, flag: "--name", value: "x", attached: true},
 			},
 			nil,
 		},
