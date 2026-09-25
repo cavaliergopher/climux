@@ -174,9 +174,9 @@ All three are *interrupts*: they run in place of the command that was
 named, without its middleware, and answer even when the line leaves out an
 argument the command requires. The rest of the line is read as usual, so
 `app --version --format=json` still binds its format. That is the whole of
-what makes `--help` special, and `climux.Interrupt` declares one of your
-own. Nothing is mounted
-that a program did not ask for.
+what makes `--help` special, and `Flag.Interrupt` makes one of your own,
+often on a flag from `climux.Unbound`, which binds no value. Nothing is
+mounted that a program did not ask for.
 
 ## Command line syntax
 

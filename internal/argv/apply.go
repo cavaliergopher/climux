@@ -68,6 +68,10 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 		case instDispatch:
 			active = instr.cmd
 			scope = append(scope, active)
+		case instGiven:
+			// Bound to no value, so nothing Set it, but the command line
+			// named it, which is the whole of what it can report.
+			sources[instr.flag] = ir.SourceArgs
 		case instInterrupt:
 			if interrupt == nil {
 				interrupt, interrupted = instr.flag, instr.cmd

@@ -227,31 +227,27 @@ func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
 	return c
 }
 
-// Interrupt returns a Flag that runs fn in place of the handler of
-// whichever command was named, without its middleware:
+// Unbound returns a Flag that binds no value. It is given by name alone:
+// it takes no argument and has no negated spelling. What it does when
+// given is whatever is chained onto it:
 //
-//	Interrupt("version", "Show the version and exit", printVersion)
+//	Unbound("end-of-options", usage).EndOfOptions()
+//	Unbound("version", usage).Interrupt(printVersion)
 //
-// The rest of the command line is read and checked as usual, except that
-// an argument the command requires may be left out. That is what lets
-// "app --help" answer someone who does not yet know what is required,
-// while "app --version --format=json" still binds its format.
-//
-// The flag takes no value and is given by name alone; Flag.Interrupt
-// makes a flag of any other kind an interrupt. See HelpFlag and
-// VersionFlag for the two every program tends to want.
-func Interrupt(name, usage string, fn HandlerFunc) *Flag {
+// With nothing chained, a handler asks whether it was given with
+// Flag.IsSetIn. It cannot be a positional argument, and reads no
+// environment variable.
+func Unbound(name, usage string) *Flag {
 	return &Flag{
-		origin:      ir.NewOrigin(),
-		names:       []string{name},
-		usage:       usage,
-		minCount:    defaultMinNArgs,
-		maxCount:    defaultMaxNArgs,
-		handlerFunc: fn,
+		origin:   ir.NewOrigin(),
+		names:    []string{name},
+		usage:    usage,
+		minCount: defaultMinNArgs,
+		maxCount: defaultMaxNArgs,
 	}
 }
 
-// HelpFlag returns the Interrupt that prints a command's help message.
+// HelpFlag returns the interrupt that prints a command's help message.
 // Given no names it answers to "--help" and "-h"; given some, it answers
 // to those, so a program wanting "-h" for something of its own keeps the
 // long name alone:
@@ -263,11 +259,12 @@ func HelpFlag(names ...string) *Flag {
 	if len(names) == 0 {
 		names = []string{"help", "h"}
 	}
-	return Interrupt(canonicalName(names), "Show this help message and exit", printHelp).
-		Aliases(names[1:]...)
+	return Unbound(canonicalName(names), "Show this help message and exit").
+		Aliases(names[1:]...).
+		Interrupt(printHelp)
 }
 
-// VersionFlag returns the Interrupt that prints version, alongside the
+// VersionFlag returns the interrupt that prints version, alongside the
 // name of the program it is mounted in. Given no names it answers to
 // "--version"; given some, it answers to those.
 //
@@ -281,8 +278,9 @@ func VersionFlag(version string, names ...string) *Flag {
 	if len(names) == 0 {
 		names = []string{"version"}
 	}
-	return Interrupt(canonicalName(names), "Show the version and exit", printVersion(version)).
-		Aliases(names[1:]...)
+	return Unbound(canonicalName(names), "Show the version and exit").
+		Aliases(names[1:]...).
+		Interrupt(printVersion(version))
 }
 
 // printHelp is the handler of the flag asking for help: the command the
@@ -376,7 +374,11 @@ func (c *Flag) Positional() *Flag {
 //
 //	docker run -it alpine ls -la   ->  -it is run's; IMAGE=alpine; ARG=["ls", "-la"]
 //
-// Only a positional argument may use it.
+// An option may use it too, to give the user a second spelling of "--":
+//
+//	Unbound("end-of-options", usage).EndOfOptions()
+//
+//	git log --end-of-options --weird-branch   ->  REV=["--weird-branch"]
 func (c *Flag) EndOfOptions() *Flag {
 	c.endOfOptions = true
 	return c
@@ -391,8 +393,8 @@ func (c *Flag) EndOfOptions() *Flag {
 //
 //	app --help deploy   ->  showHelp runs, with topic "deploy"
 //
-// The package-level Interrupt builds the common case, a flag that takes
-// no value at all. A positional argument may not interrupt.
+// Unbound builds the common case, a flag that takes no value at all. A
+// positional argument may not interrupt.
 func (c *Flag) Interrupt(fn HandlerFunc) *Flag {
 	c.handlerFunc = fn
 	return c

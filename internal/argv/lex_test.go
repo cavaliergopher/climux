@@ -92,8 +92,15 @@ func newOpt(names []string, takesValue bool) *ir.Flag {
 		NamedOptions:   named,
 		ClaimedOptions: claimed,
 		TakesValue:     takesValue,
+		Value:          stubValue{},
 	}
 }
+
+// stubValue accepts anything. A flag bound to no value is read as one
+// that takes none, so a fixture that is not meant to be one binds this.
+type stubValue struct{}
+
+func (stubValue) Set(string) error { return nil }
 
 // opt is newOpt for a boolean flag, which takes no value.
 func opt(names ...string) *ir.Flag { return newOpt(names, false) }

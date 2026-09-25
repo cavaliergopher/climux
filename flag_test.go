@@ -459,7 +459,7 @@ func TestCompileKind(t *testing.T) {
 		Uint64(&u64, "uint64", 0, ""),
 		Var(&ks, "kind-var", ""),
 		IPVar(&ip, "opaque-var", nil, ""),
-		Interrupt("stop", "", func(ctx context.Context, inv *Invocation) error { return nil }),
+		Unbound("stop", "").Interrupt(func(ctx context.Context, inv *Invocation) error { return nil }),
 	)
 	node, err := cmd.Compile()
 	if err != nil {

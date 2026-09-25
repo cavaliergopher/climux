@@ -643,7 +643,7 @@ func TestInterruptFlagReadsTheRest(t *testing.T) {
 	var topics []string
 	cmd := NewCommand("test", "").
 		Flags(
-			Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
+			Unbound("where", "").Interrupt(func(ctx context.Context, inv *Invocation) error {
 				return nil
 			}),
 			String(&format, "format", "", ""),

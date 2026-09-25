@@ -82,14 +82,18 @@ below may add its own, and collides with the root's if one is there.
 
 Any flag may interrupt, through `Flag.Interrupt`, and still binds its
 value, so the author chooses what a help flag means by its type. A flag
-built with `Interrupt` takes no value, so `app --help sub` is help for
+built with `Unbound` takes no value, so `app --help sub` is help for
 `app`: it names no other command. A `String` flag that interrupts takes
 the next word as its value, so `app --help sub` hands `sub` to a handler
 that dispatches on it. The parser does not guess between them.
 
 A flag bound to no value has no default to restore and no negated
 spelling, and an attached value -- `--help=false` -- is a malformed token
-rather than something to set.
+rather than something to set. `Unbound` builds one, and an effect is
+chained onto it -- `Unbound("help", usage).Interrupt(printHelp)`,
+`Unbound("end-of-options", usage).EndOfOptions()` -- rather than each
+effect having a constructor of its own, which would put every effect in
+the API twice. With nothing chained it is a flag a handler asks about.
 
 An interrupt runs no middleware. It answers and takes no other action: a
 program whose middleware redirects output to a file writes no file for

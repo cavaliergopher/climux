@@ -69,10 +69,6 @@ func validateSelf(c *Command) error {
 			if err := validateFlag(flag); err != nil {
 				errs = append(errs, err)
 			}
-			if flag.EndOfOptions && !flag.Positional {
-				errs = append(errs, newConfigErrorf(nil, c, flag,
-					"only a positional argument may end option processing"))
-			}
 			if flag.Positional {
 				if hasUnboundedPositional {
 					errs = append(errs, newConfigErrorf(nil, c, flag, "positional arguments cannot follow unbounded positional arguments"))
@@ -114,15 +110,21 @@ func validateFlag(f *Flag) error {
 			fail("option is not matchable: %s", option)
 		}
 	}
-	// A flag may be bound to nothing only when it interrupts, since
-	// running is then the whole of what it does. An interrupt fires when
-	// the line names it, and a positional argument is never named.
-	if f.Handler != nil {
+	// A flag bound to no value is given by name alone, so it has no token
+	// to take as a positional argument and nothing an environment variable
+	// could set.
+	if f.Value == nil {
 		if f.Positional {
-			fail("positional argument must not interrupt")
+			fail("positional argument must be bound to a value")
 		}
-	} else if f.Value == nil {
-		fail("flag must be bound to a value")
+		if f.EnvVar != "" {
+			fail("flag bound to no value reads no environment variable")
+		}
+	}
+	// An interrupt fires when the line names it, and a positional argument
+	// is never named.
+	if f.Handler != nil && f.Positional {
+		fail("positional argument must not interrupt")
 	}
 	if f.MinCount < 0 {
 		fail("minimum count must not be negative: %d", f.MinCount)

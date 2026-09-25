@@ -925,12 +925,97 @@ func TestEndOfOptionsIsTheAuthorsTerminator(t *testing.T) {
 	}
 }
 
-// TestEndOfOptionsIsPositionalOnly asserts that an option cannot end
-// option processing: there is no place on the line for it to end at.
-func TestEndOfOptionsIsPositionalOnly(t *testing.T) {
-	assertParseError(t, NewCommand("test", "").
-		Flags(String(new(string), "name", "", "").EndOfOptions()),
-		"only a positional argument may end option processing")
+// TestUnbound asserts what a flag bound to no value is: given by name
+// alone, with no negated spelling and no attached value, and recorded as
+// given even when nothing is chained onto it, so a handler can ask.
+func TestUnbound(t *testing.T) {
+	dryRun := Unbound("dry-run", "")
+	build := func() *Command {
+		return NewCommand("test", "").
+			Flags(dryRun, Unbound("end-of-options", "").EndOfOptions()).
+			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
+	}
+
+	inv, err := Parse(build(), "--dry-run")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := dryRun.IsSetIn(inv), true; got != want {
+		t.Errorf("IsSetIn = %v, want %v", got, want)
+	}
+	inv, err = Parse(build())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := dryRun.IsSetIn(inv), false; got != want {
+		t.Errorf("IsSetIn with nothing given = %v, want %v", got, want)
+	}
+
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--no-end-of-options"}, "unrecognized option: --no-end-of-options"},
+		{[]string{"--dry-run=true"}, "option takes no argument: --dry-run"},
+	} {
+		_, err := Parse(build(), tt.args...)
+		if got := humanMessage(err); got != tt.want {
+			t.Errorf("Parse(%q) error = %q, want %q", tt.args, got, tt.want)
+		}
+	}
+}
+
+// TestUnboundCannotBeSet asserts the two ways a flag bound to no value
+// could be asked to hold one are configuration errors.
+func TestUnboundCannotBeSet(t *testing.T) {
+	assertParseError(t, NewCommand("test", "").Flags(Unbound("word", "").Positional()),
+		"positional argument must be bound to a value")
+	assertParseError(t, NewCommand("test", "").Flags(Unbound("dry-run", "").Env("DRY_RUN")),
+		"flag bound to no value reads no environment variable")
+}
+
+// TestEndOfOptionsOnAnOption asserts that an option may end option
+// processing as a positional does, from where it is given: an unbound one
+// is a second spelling of "--", git's --end-of-options, and one taking a
+// value starts the next program's arguments the way find's -exec does.
+func TestEndOfOptionsOnAnOption(t *testing.T) {
+	var verbose bool
+	var exec string
+	var args []string
+	build := func() *Command {
+		verbose, exec, args = false, "", nil
+		return NewCommand("test", "").
+			Flags(
+				Bool(&verbose, "verbose", false, ""),
+				Unbound("end-of-options", "").EndOfOptions(),
+				String(&exec, "exec", "", "").EndOfOptions(),
+				Strings(&args, "ARG", nil, "").Positional(),
+			).
+			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
+	}
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		wantExec string
+		wantArgs []string
+	}{
+		{"SecondSpellingOfTerminator", []string{"--end-of-options", "--verbose", "-x"}, "", []string{"--verbose", "-x"}},
+		{"ValueStartsTheTail", []string{"--exec", "ls", "-la", "--verbose"}, "ls", []string{"-la", "--verbose"}},
+		{"AttachedValueStartsTheTail", []string{"--exec=ls", "-la"}, "ls", []string{"-la"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Dispatch(context.Background(), build(), WithArgs(tt.args...)); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got, want := verbose, false; got != want {
+				t.Errorf("verbose = %v, want %v", got, want)
+			}
+			assertString(t, tt.wantExec, exec)
+			if !slices.Equal(args, tt.wantArgs) {
+				t.Errorf("ARG = %q, want %q", args, tt.wantArgs)
+			}
+		})
+	}
 }
 
 func TestValidatePositionalAfterUnbounded(t *testing.T) {
@@ -1774,7 +1859,7 @@ func TestInterruptRunsInPlaceOfTheHandler(t *testing.T) {
 			return nil
 		})
 	cmd := NewCommand("test", "").
-		Flags(Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
+		Flags(Unbound("where", "").Interrupt(func(ctx context.Context, inv *Invocation) error {
 			ran = inv.Cmd.FullName
 			return nil
 		})).
@@ -1794,7 +1879,7 @@ func TestInterruptRunsInPlaceOfTheHandler(t *testing.T) {
 func TestInterruptTakesNoArgument(t *testing.T) {
 	newCmd := func() *Command {
 		return NewCommand("test", "").
-			Flags(Interrupt("where", "", func(ctx context.Context, inv *Invocation) error {
+			Flags(Unbound("where", "").Interrupt(func(ctx context.Context, inv *Invocation) error {
 				return nil
 			}))
 	}

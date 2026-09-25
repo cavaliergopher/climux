@@ -131,9 +131,7 @@ type Flag struct {
 
 	// EndOfOptions reports that every argument after this one is treated
 	// as an argument rather than a flag, even if it begins with a dash, as
-	// if the user had typed "--" after it. Only a positional flag may set
-	// it, since only a positional has a place on the line to take effect
-	// from.
+	// if the user had typed "--" after it.
 	EndOfOptions bool
 
 	Hidden   bool
@@ -178,8 +176,8 @@ type Flag struct {
 	// the command requires. No middleware wraps it.
 	//
 	// An interrupt binds its value like any other flag. One with no Value
-	// -- see climux.Interrupt -- takes no argument on the command line,
-	// and has no default to restore and no opposite to spell.
+	// -- see climux.Unbound -- takes no argument on the command line, and
+	// has no default to restore and no opposite to spell.
 	Handler HandlerFunc
 }
 

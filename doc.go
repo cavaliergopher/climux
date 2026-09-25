@@ -175,7 +175,8 @@ likes.
 All three flags are interrupts, which is the whole of what makes --help
 special: they run in place of the command that was named, without its
 middleware, and answer even when the line leaves out an argument it
-requires. Declare one of your own with Interrupt.
+requires. Make one of your own with Flag.Interrupt, often on a flag from
+Unbound, which binds no value.
 
 # Middleware
 
@@ -306,7 +307,7 @@ a second spelling of --flag=false rather than a feature a flag opts into.
 The value negates with the flag, so --no-flag=false sets true. Short names
 have no negated spelling, since -f=false is already the short way to say
 it, and help does not list the negated spellings, since every boolean has
-one. A flag built with Interrupt, such as --help, binds no value and so
+one. A flag built with Unbound, such as --help, binds no value and so
 has none of these forms: it is given by name and nothing else.
 
 The detached forms are not permitted for boolean flags because the meaning

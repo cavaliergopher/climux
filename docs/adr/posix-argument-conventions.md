@@ -131,7 +131,8 @@ A program declares the same thing in advance with `EndOfOptions` on a
 positional. Once that argument has taken its token, options have ended, so
 `docker run [OPTIONS] IMAGE [COMMAND] [ARG...]` hands `-la` in
 `docker run alpine ls -la` to the container without its user typing a
-terminator.
+terminator. On an option, the same bit gives the user a second spelling of
+`--`, which is git's `--end-of-options`.
 
 Three designs gave forwarding a mechanism of its own and were dropped: a
 `Rest` kind of flag, a `ForwardArgs` bit keyed on the terminator, and an

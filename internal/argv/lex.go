@@ -37,6 +37,7 @@ type instructionKind int
 const (
 	instSet instructionKind = iota
 	instDispatch
+	instGiven
 	instInterrupt
 )
 
@@ -46,7 +47,7 @@ const (
 type instruction struct {
 	kind instructionKind
 
-	// set, interrupt: the flag the instruction names.
+	// set, given, interrupt: the flag the instruction names.
 	flag     *ir.Flag
 	value    string
 	attached bool
@@ -237,12 +238,6 @@ func (lx *lexer) lexOperand(tok string, idx int) {
 		lx.emitSet(resolvedOption{flag: f}, tok, false, idx)
 		lx.posCount++
 		lx.posBound = true
-		// Option processing ends once the argument that says so has taken
-		// its token, which is the author's half of what a user writes as
-		// "--": everything after it is an operand.
-		if f.EndOfOptions {
-			lx.optionsEnded = true
-		}
 		if f.MaxCount > 0 && lx.posCount == f.MaxCount {
 			// all done with this positional flag
 			lx.positionals = lx.positionals[1:]
@@ -290,10 +285,10 @@ func (lx *lexer) lexLongOption(tok string, idx int) {
 		lx.unrecognizedOption(name)
 		return
 	}
-	// A flag bound to no value is given by name alone, and interrupting
-	// is all it does.
-	if o.flag.Handler != nil && o.flag.Value == nil {
-		lx.emitInterrupt(o.flag, name, attached)
+	// A flag bound to no value is given by name alone; what it does is
+	// its effects.
+	if o.flag.Value == nil {
+		lx.emitUnbound(o.flag, name, attached)
 		return
 	}
 
@@ -336,9 +331,9 @@ func (lx *lexer) lexShortOptions(arg string, idx int) {
 		// A flag bound to no value reads nothing, so the names after it in
 		// the same argument are read as usual -- unless one was attached
 		// with "=", which is malformed and consumes the rest of it.
-		if o.flag.Handler != nil && o.flag.Value == nil {
+		if o.flag.Value == nil {
 			attached := len(rest) > 0 && rest[0] == '='
-			lx.emitInterrupt(o.flag, name, attached)
+			lx.emitUnbound(o.flag, name, attached)
 			if attached {
 				return
 			}
@@ -434,6 +429,13 @@ func (lx *lexer) emitSet(o resolvedOption, value string, attached bool, argIndex
 		attached: attached,
 		argIndex: argIndex,
 	})
+	// Option processing ends once a flag that says so has been given --
+	// a positional taking its token, or an option such as git's
+	// --end-of-options -- which is the author's half of what a user
+	// writes as "--": everything after it is an operand.
+	if o.flag.EndOfOptions {
+		lx.optionsEnded = true
+	}
 	// A flag that interrupts still binds its value, so its handler can
 	// read what it was given; naming it records the interrupt too.
 	if o.flag.Handler != nil {
@@ -443,23 +445,31 @@ func (lx *lexer) emitSet(o resolvedOption, value string, attached bool, argIndex
 	}
 }
 
-// emitInterrupt records that the option name reached an interrupt bound
-// to no value: a flag that runs in place of the handler of the command
-// active here. "app remote --help" concerns remote and "app --help remote"
-// concerns app: a flag that takes no value names no other command, so
-// where it was given is all it can mean.
+// emitUnbound records that the option name reached a flag bound to no
+// value, and applies its effects. An interrupt runs in place of the
+// handler of the command active here: "app remote --help" concerns remote
+// and "app --help remote" concerns app, since a flag that takes no value
+// names no other command. A flag with no interrupt is still recorded as
+// given, so a handler can ask.
 //
 // Such a flag takes no argument, so one attached to it is a malformed
 // token rather than a value to bind, and is reported like any other.
 // Nothing about an interrupt ends the lex: the rest of the line is read
 // as usual, so "app --version --format=json" still binds its format.
-func (lx *lexer) emitInterrupt(f *ir.Flag, name string, attached bool) {
+func (lx *lexer) emitUnbound(f *ir.Flag, name string, attached bool) {
 	if attached {
 		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, f, name,
 			"option takes no argument: %s", name))
 		return
 	}
-	lx.instructions = append(lx.instructions, instruction{kind: instInterrupt, flag: f, cmd: lx.cmd})
+	if f.Handler != nil {
+		lx.instructions = append(lx.instructions, instruction{kind: instInterrupt, flag: f, cmd: lx.cmd})
+	} else {
+		lx.instructions = append(lx.instructions, instruction{kind: instGiven, flag: f})
+	}
+	if f.EndOfOptions {
+		lx.optionsEnded = true
+	}
 }
 
 // findDescendantWithFlag returns the first descendant of cmd to answer to
