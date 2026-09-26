@@ -3,3 +3,4 @@
 # comparison for a reason that has nothing to do with the program.
 *.json text eol=lf
 *.golden text eol=lf
+conformance/REPORT.md text eol=lf
