@@ -1118,13 +1118,38 @@ func TestUnbound(t *testing.T) {
 	}
 }
 
-// TestUnboundCannotBeSet asserts the two ways a flag bound to no value
-// could be asked to hold one are configuration errors.
+// TestUnboundCannotBeSet asserts that every way a flag bound to no value
+// could be asked to hold one is a configuration error. Positional and Env
+// are caught by the compiled tree's own validation; Bind and Default are
+// recorded by the builder when they are called, since only it can see
+// them, and reported when it lowers, so all four surface from Compile.
 func TestUnboundCannotBeSet(t *testing.T) {
 	assertParseError(t, NewCommand("test", "").Flags(Unbound("word", "").Positional()),
-		"positional argument must be bound to a value")
+		"Positional on a flag that binds no value; bind one to take an operand")
 	assertParseError(t, NewCommand("test", "").Flags(Unbound("dry-run", "").Env("DRY_RUN")),
-		"flag bound to no value reads no environment variable")
+		"Env on a flag that binds no value; bind one to read it from the environment")
+
+	for _, tt := range []struct {
+		name string
+		flag Flag
+		want string
+	}{
+		{"Bind", Unbound("dry-run", "").Bind(new(bool)),
+			"--dry-run: Bind on an Unbound flag, which stores no value; declare it with Bool to bind a variable, or read State() for whether it was given"},
+		{"Default", Unbound("dry-run", "").Default(true),
+			"--dry-run: Default on an Unbound flag, which stores no value; declare it with Bool to give it one"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewCommand("test", "").Flags(tt.flag)
+			if !assertConfigError(t, cmd, tt.name+" on an unbound flag") {
+				return
+			}
+			_, err := Parse(cmd)
+			if got := humanMessage(err); got != tt.want {
+				t.Errorf("message = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 // TestEndOfOptionsOnAnOption asserts that an option may end option

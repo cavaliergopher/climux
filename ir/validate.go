@@ -115,10 +115,10 @@ func validateFlag(f *Flag) error {
 	// could set.
 	if f.Value == nil {
 		if f.Positional {
-			fail("positional argument must be bound to a value")
+			fail("Positional on a flag that binds no value; bind one to take an operand")
 		}
 		if f.EnvVar != "" {
-			fail("flag bound to no value reads no environment variable")
+			fail("Env on a flag that binds no value; bind one to read it from the environment")
 		}
 	}
 	// An interrupt fires when the line names it, and a positional argument

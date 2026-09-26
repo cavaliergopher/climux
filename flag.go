@@ -131,6 +131,9 @@ func (c *FlagBuilder[T]) State() *FlagState[T] { return c.state }
 // holds, so Value and p never disagree unless the program writes p
 // itself. Nothing is written to p before the command line is parsed.
 func (c *FlagBuilder[T]) Bind(p *T) *FlagBuilder[T] {
+	if c.t == nil {
+		c.errors = append(c.errors, "Bind on an Unbound flag, which stores no value; declare it with Bool to bind a variable, or read State() for whether it was given")
+	}
 	c.state.p = p
 	return c
 }
@@ -143,10 +146,11 @@ func (c *FlagBuilder[T]) Bind(p *T) *FlagBuilder[T] {
 // of the default or of what the line says, happens when the line is
 // parsed.
 func (c *FlagBuilder[T]) Default(value T) *FlagBuilder[T] {
-	c.defValue = fmt.Sprint(value)
-	if c.t != nil {
-		c.defValue = c.t.Format(value)
+	if c.t == nil {
+		c.errors = append(c.errors, "Default on an Unbound flag, which stores no value; declare it with Bool to give it one")
+		return c
 	}
+	c.defValue = c.t.Format(value)
 	c.shared.SetDefault = func() { c.writeDefault(value) }
 	return c
 }
@@ -183,6 +187,12 @@ type flagConfig struct {
 	// shared is the runtime state every node lowered from this
 	// declaration points at, and the parser writes. See ir.FlagState.
 	shared *ir.FlagState
+
+	// errors records a setter called on a flag it cannot apply to, such
+	// as Bind on one binding no value. A setter only records it; lower
+	// reports it, beside the name checks, so that every configuration
+	// error still surfaces from Compile.
+	errors []string
 
 	// kind classifies the value being bound, set by whichever typed
 	// constructor built this flag, or recovered from a flag.Getter for
@@ -316,9 +326,9 @@ func Uint64(name, usage string) *FlagBuilder[uint64] {
 //	Unbound("version", usage).Interrupt(printVersion)
 //
 // With nothing chained, a handler asks whether it was given through
-// State: its Value and IsSet both report that. It cannot be a positional
-// argument, reads no environment variable, and has no Default worth
-// setting.
+// State: its Value and IsSet both report that. It binds nothing, so
+// Bind, Default, Env and Positional on it are configuration errors,
+// reported by Compile.
 func Unbound(name, usage string) *FlagBuilder[bool] {
 	c := newFlag[bool](name, usage)
 	// It binds nothing, so what it holds is whether it was named.
@@ -607,6 +617,9 @@ func (c *flagConfig) lower(errs *[]error) *ir.Flag {
 		Handler:        c.handlerFunc,
 	}
 	c.validateNames(flag, errs)
+	for _, msg := range c.errors {
+		*errs = append(*errs, ir.NewConfigErrorf(nil, nil, flag, "%s", msg))
+	}
 	return flag
 }
 
