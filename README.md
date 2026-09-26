@@ -163,8 +163,9 @@ var App = climux.NewCommand("orbital", "Operate the fleet").
 
 Add them to the root. The help flag is persistent, so every command below
 answers to it too, each printing its own help; `--version` answers on the
-root alone. They read nothing else on the line and check nothing,
-so they answer a half-typed command as well.
+root alone. They excuse a missing required argument, so they answer a
+half-typed command as well, but the rest of the line is still read and
+checked: `app --bogus --help` reports the typo.
 
 Declaring them first is a convention, not a rule — it heads the list of
 options, which is where argparse puts them. The `HelpFlag`, `VersionFlag`

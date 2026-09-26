@@ -163,8 +163,9 @@ both spellings of it from the one string a build stamps into a constant:
 
 Add the flags to the root. The help flag is persistent, so every command
 below answers to it too, each printing its own help; --version answers on
-the root alone. Nothing else on the command line is read or
-checked, so they answer a half-typed command line as well.
+the root alone. They excuse a missing required argument, so they answer
+a half-typed command line as well, but the rest of the line is still read
+and checked: "app --bogus --help" reports the typo.
 
 Declaring them first is a convention rather than a rule: it puts them at
 the head of the options a command lists, which is where argparse puts
