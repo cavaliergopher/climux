@@ -50,6 +50,7 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 	if len(res.errs) > 0 {
 		return nil, res.errs[0]
 	}
+	resetDefaults(root)
 
 	active := root
 	scope := []*ir.Command{root}
@@ -87,6 +88,7 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 	if err := applyEnvVars(scope, counts, sources); err != nil {
 		return nil, err
 	}
+	applyDefaults(root)
 	forgiveMissing := interrupt != nil || active.Interrupts
 	if err := validateNArgs(active, scope, counts, forgiveMissing); err != nil {
 		return nil, err
@@ -95,6 +97,40 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 		return invocationFor(interrupted, interrupt, sources), nil
 	}
 	return invocationFor(active, nil, sources), nil
+}
+
+// resetDefaults forgets the previous reading of every flag under cmd, so
+// that this one starts from nothing named. It writes no variable.
+func resetDefaults(cmd *ir.Command) {
+	for _, group := range cmd.FlagGroups {
+		for _, f := range group.Flags {
+			if f.Reset != nil {
+				f.Reset()
+			}
+		}
+	}
+	for _, sub := range cmd.Subcommands {
+		resetDefaults(sub)
+	}
+}
+
+// applyDefaults gives every flag under cmd the chance to write its
+// default, which it does if the reading never named it. It covers the
+// whole tree rather than the scope the line reached, because a flag out
+// of scope holding its default is what a program expects of it, and it
+// leaves the decision to the flag, because a declaration mounted twice
+// in one path is two nodes here and one variable there.
+func applyDefaults(cmd *ir.Command) {
+	for _, group := range cmd.FlagGroups {
+		for _, f := range group.Flags {
+			if f.SetDefault != nil {
+				f.SetDefault()
+			}
+		}
+	}
+	for _, sub := range cmd.Subcommands {
+		applyDefaults(sub)
+	}
 }
 
 // setFlag sets f's value to token, wrapping a failure the same way it

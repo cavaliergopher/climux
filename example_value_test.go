@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net"
+
+	"go.hotsrc.dev/climux/ir"
 )
 
-// ipDecoder decodes a net.IP.
-type ipDecoder struct{}
+// ipType describes a net.IP to climux: how one is decoded, shown and
+// classified.
+type ipType struct{}
 
-func (ipDecoder) Decode(v *net.IP, s string) error {
+func (ipType) Decode(v *net.IP, s string) error {
 	ip := net.ParseIP(s)
 	if ip == nil {
 		return fmt.Errorf("invalid IP: %s", s)
@@ -18,21 +21,23 @@ func (ipDecoder) Decode(v *net.IP, s string) error {
 	return nil
 }
 
-// IPVar returns a Flag that can be used to define a net.IP flag with
-// specified name, default value, and usage string. The argument p points to a
-// net.IP variable in which to store the value of the flag.
-func IPVar(p *net.IP, name string, value net.IP, usage string) *Flag {
-	*p = value
-	return Var(p, name, usage, ipDecoder{})
+func (ipType) Format(v net.IP) string { return v.String() }
+func (ipType) Kind() ir.Kind          { return ir.KindOpaque }
+
+// IPVar returns a net.IP flag with the specified name and usage string.
+// The argument p points to a net.IP variable in which to store the value
+// of the flag.
+func IPVar(p *net.IP, name, usage string) *FlagBuilder[net.IP] {
+	return Var(p, name, usage, ipType{})
 }
 
-func ExampleDecoder() {
+func ExampleVarType() {
 	var ip net.IP
 
 	cmd := NewCommand("ping", "").
 		Flags(
-			// configure a net.IP flag with our custom Decoder
-			IPVar(&ip, "ip", net.IPv6zero, "IP address to ping"),
+			// configure a net.IP flag with our custom VarType
+			IPVar(&ip, "ip", "IP address to ping").Default(net.IPv6zero),
 		).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			fmt.Fprintf(inv.Stdout, "ping: %s\n", ip)

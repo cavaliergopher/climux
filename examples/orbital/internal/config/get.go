@@ -12,7 +12,7 @@ func getCommand() *climux.Command {
 	var key string
 	return climux.NewCommand("get", "Print the value of a configuration key").
 		Flags(
-			climux.String(&key, "KEY", "", "Configuration key to read").
+			climux.String(&key, "KEY", "Configuration key to read").
 				Positional().
 				Required(),
 		).

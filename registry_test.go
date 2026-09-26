@@ -16,8 +16,8 @@ func TestRegistryChains(t *testing.T) {
 	var tr tracer
 	registry := new(Registry).
 		FlagGroups(
-			NewFlagGroup("first", "First options", String(new(string), "one", "", "")),
-			NewFlagGroup("second", "Second options", String(new(string), "two", "", "")),
+			NewFlagGroup("first", "First options", String(new(string), "one", "")),
+			NewFlagGroup("second", "Second options", String(new(string), "two", "")),
 		).
 		Middleware(tr.step("outer"), tr.step("inner")).
 		Subcommands(
@@ -55,7 +55,7 @@ func TestMountResolvesAtParse(t *testing.T) {
 	registry := new(Registry)
 	cmd := NewCommand("test", "").Mount(registry)
 	registry.FlagGroups(NewFlagGroup("late", "Late options",
-		String(&s, "name", "", ""),
+		String(&s, "name", ""),
 	))
 	if _, err := Parse(cmd, "--name=value"); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestMountIsNotWrittenBack(t *testing.T) {
 	var s string
 	registry := new(Registry)
 	registry.FlagGroups(NewFlagGroup("lib", "Lib options",
-		String(&s, "name", "", ""),
+		String(&s, "name", ""),
 	))
 	cmd := NewCommand("test", "").Mount(registry)
 	for i := 1; i <= 2; i++ {
@@ -109,13 +109,13 @@ func TestMountDuplicateFlagNames(t *testing.T) {
 	newRegistry := func() *Registry {
 		registry := new(Registry)
 		registry.FlagGroups(NewFlagGroup("lib", "Lib options",
-			String(new(string), "foo", "", ""),
+			String(new(string), "foo", ""),
 		))
 		return registry
 	}
 	t.Run("WithOwnFlag", func(t *testing.T) {
 		assertConfigError(t, NewCommand("test", "").
-			Flags(String(new(string), "foo", "", "")).
+			Flags(String(new(string), "foo", "")).
 			Mount(newRegistry()),
 			"a mounted flag colliding with a declared flag")
 	})
@@ -131,13 +131,13 @@ func TestMountDuplicateFlagNames(t *testing.T) {
 func TestMountUsage(t *testing.T) {
 	registry := new(Registry)
 	registry.FlagGroups(NewFlagGroup("logging", "Logging options",
-		String(new(string), "log-level", "", "Set log verbosity"),
+		String(new(string), "log-level", "Set log verbosity"),
 	))
 	registry.FlagGroups(NewFlagGroup("metrics", "Metrics options",
-		String(new(string), "metrics-addr", "", "Metrics listen address"),
+		String(new(string), "metrics-addr", "Metrics listen address"),
 	))
 	cmd := NewCommand("test", "").
-		Flags(Bool(new(bool), "verbose", false, "Print more")).
+		Flags(Bool(new(bool), "verbose", "Print more")).
 		Mount(registry)
 
 	node, err := cmd.Compile()
@@ -175,7 +175,7 @@ func TestMountTwiceInOnePath(t *testing.T) {
 	var level string
 	registry := new(Registry)
 	registry.FlagGroups(NewFlagGroup("telemetry", "Telemetry options",
-		String(&level, "log-level", "info", ""),
+		String(&level, "log-level", "").Default("info"),
 	))
 	sub := NewCommand("sub", "").Mount(registry)
 	cmd := NewCommand("test", "").Mount(registry).Subcommands(sub)

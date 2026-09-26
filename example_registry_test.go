@@ -26,7 +26,7 @@ type platformSettings struct {
 // FlagGroup returns a new group of flags bound to s.
 func (s *platformSettings) FlagGroup() *FlagGroup {
 	return NewFlagGroup("platform", "Platform options",
-		Duration(&s.deadline, "timeout", 0, "Abort the command after this long"),
+		Duration(&s.deadline, "timeout", "Abort the command after this long"),
 	)
 }
 

@@ -20,16 +20,64 @@ const (
 // TODO: mutually exclusive flags?
 // TODO: error handling modes
 
-// Flag describes a command line flag that may be specified on the command
-// line.
+// Flag is a command line flag a command mounts, whatever type it binds.
+// Every FlagBuilder is one, so Command.Flags takes a String beside a
+// Bool, and a FlagGroup holds them together. Nothing outside this package
+// implements it.
+type Flag interface {
+	lower(errs *[]error) *ir.Flag
+}
+
+// FlagBuilder declares a command line flag binding a T, and is what every
+// constructor returns. Each chained method returns the builder again, so
+// a declaration reads as one expression:
 //
-// The same type also describes a positional operand once marked with
-// Positional: every constructor and every chained modifier applies to
-// both, and Flag is simply named for the more common case.
+//	String(&output, "output", "Output format").Default("json").Env("APP_OUTPUT")
 //
-// Programs should not create Flag directly and instead use one of the typed
-// constructors such as String, Int or Var to construct one.
-type Flag struct {
+// The same type also declares a positional operand once marked with
+// Positional: every constructor and every chained method applies to
+// both, and it is simply named for the more common case.
+//
+// Programs should not create a FlagBuilder directly and instead use one of
+// the typed constructors such as String, Int or Var to construct one.
+type FlagBuilder[T any] struct {
+	flagConfig
+
+	// p points to the variable the flag's value lives in, and
+	// writeDefault is how a default reaches it: the plain write for every
+	// flag but BitField, whose default also sets a bit in a shared word.
+	p            *T
+	writeDefault func(value T)
+
+	// v is the adapter the parser writes through, and the one thing that
+	// knows whether the line named the flag: one declaration may lower
+	// into several nodes, and v is shared by all of them.
+	v *value[T]
+}
+
+// Default sets the flag's default value, which parsing writes into the
+// variable when the command line and the environment leave the flag
+// alone, and which help shows for it. Without it nothing is written for
+// an unnamed flag: the variable holds whatever the program left there.
+// Declaring a flag writes nothing either way; the one write, of the
+// default or of what the line says, happens when the line is parsed.
+func (c *FlagBuilder[T]) Default(value T) *FlagBuilder[T] {
+	c.defValue = fmt.Sprint(value)
+	if c.v != nil {
+		c.defValue = c.v.t.Format(value)
+	}
+	c.setDefault = func() {
+		if c.v == nil || !c.v.named {
+			c.writeDefault(value)
+		}
+	}
+	return c
+}
+
+// flagConfig is what every flag declares whatever it binds: the half of
+// a FlagBuilder that has no T, and the whole of a flag imported from a
+// flag.FlagSet, which has none to offer.
+type flagConfig struct {
 	// names are every name the flag answers to, in the slot order Names
 	// documents. A slot may be empty, which is how a flag declares an
 	// alias without a short name, so the slice is read by index rather
@@ -55,6 +103,14 @@ type Flag struct {
 	completeFunc ir.CompleteFunc
 	value        ir.Value
 
+	// reset forgets the previous reading of the flag, so that the next
+	// naming is again the first, and writes nothing. setDefault writes
+	// the declared default into the variable if the reading never named
+	// the flag, and is nil when none was declared. Both are the parser's
+	// to call; see ir.Flag.
+	reset      func()
+	setDefault func()
+
 	// kind classifies the value being bound, set by whichever typed
 	// constructor built this flag, or recovered from a flag.Getter for
 	// one imported with FromFlagSet. See ir.Kind.
@@ -62,7 +118,7 @@ type Flag struct {
 
 	// handlerFunc is what the flag runs in place of the command's handler
 	// when the line names it, which is what makes it an interrupt. See
-	// Flag.Interrupt.
+	// FlagBuilder.Interrupt.
 	handlerFunc HandlerFunc
 
 	// origin is this declaration's identity, minted once here and copied
@@ -72,157 +128,132 @@ type Flag struct {
 	origin ir.Origin
 }
 
-// Var returns a Flag that can be used to define a command line flag whose
-// value dec decodes. The argument p points to a variable in which to
-// store the value of the flag, and its initial value is the flag's
-// default.
+// Var returns a flag binding a variable of a type t describes: how its
+// value is decoded, shown and classified. The argument p points to the
+// variable in which to store the value of the flag. Declaring the flag
+// writes nothing there: parsing writes what the command line says, or
+// the default if Default declared one, or nothing.
 //
 // name becomes the flag's canonical name: one character is spelled with a
-// single dash, so Var(p, "n", usage, dec) declares "-n", and anything
-// longer takes two. Add further names with Flag.Aliases.
-//
-// The flag's Kind is ir.KindOpaque unless dec has a Kind method, which
-// lets a custom decoder describe what it accepts as precisely as a typed
-// constructor such as String or Int already does. See Decoder.
-func Var[T any](p *T, name, usage string, dec Decoder[T]) *Flag {
-	v := &value[T]{p: p, dec: dec}
-	return &Flag{
-		origin:   ir.NewOrigin(),
-		names:    []string{name},
-		usage:    usage,
-		defValue: fmt.Sprint(*p),
-		minCount: defaultMinNArgs,
-		maxCount: defaultMaxNArgs,
-		value:    v,
-		kind:     kindOf(v),
+// single dash, so Var(p, "n", usage, t) declares "-n", and anything
+// longer takes two. Add further names with FlagBuilder.Aliases.
+func Var[T any](p *T, name, usage string, t VarType[T]) *FlagBuilder[T] {
+	v := &value[T]{p: p, t: t}
+	c := newFlag[T](name, usage)
+	c.value = v
+	c.kind = t.Kind()
+	c.p = p
+	c.v = v
+	c.reset = v.reset
+	c.writeDefault = func(value T) { *p = value }
+	return c
+}
+
+// newFlag returns the builder every constructor starts from, binding
+// nothing yet.
+func newFlag[T any](name, usage string) *FlagBuilder[T] {
+	return &FlagBuilder[T]{
+		flagConfig: flagConfig{
+			origin:   ir.NewOrigin(),
+			names:    []string{name},
+			usage:    usage,
+			minCount: defaultMinNArgs,
+			maxCount: defaultMaxNArgs,
+		},
+		writeDefault: func(T) {},
 	}
 }
 
-// BitField returns a Flag that can be used to define a bool flag with
-// specified name, default value, and usage string, which sets the bits of
-// mask in the uint64 variable p points to when it is true. Several
-// BitFields may share one variable, each setting its own bits. A false
-// leaves the variable as it is.
-func BitField(p *uint64, mask uint64, name string, value bool, usage string) *Flag {
-	if value {
-		*p |= mask
+// BitField returns a bool flag which sets the bits of mask in the uint64
+// variable p points to when it is true. Several BitFields may share one
+// variable, each setting its own bits, and a Default of true sets them
+// too. A false leaves the variable as it is.
+func BitField(p *uint64, mask uint64, name, usage string) *FlagBuilder[bool] {
+	c := Var(new(bool), name, usage, bitFieldType{word: p, mask: mask})
+	c.writeDefault = func(value bool) {
+		*c.p = value
+		if value {
+			*p |= mask
+		}
 	}
-	bit := new(bool)
-	*bit = value
-	c := Var(bit, name, usage, bitFieldDecoder{word: p, mask: mask})
-	c.kind = ir.KindBool
 	return c
 }
 
-// Bool returns a Flag that can be used to define a bool flag with
-// specified name, default value, and usage string. The argument p points to a
-// bool variable in which to store the value of the flag.
-func Bool(p *bool, name string, value bool, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, boolDecoder{})
-	c.kind = ir.KindBool
-	return c
+// Bool returns a bool flag with the specified name and usage string. The
+// argument p points to a bool variable in which to store the value of the
+// flag.
+func Bool(p *bool, name, usage string) *FlagBuilder[bool] {
+	return Var(p, name, usage, boolType{})
 }
 
-// Duration returns a Flag that can be used to define a time.Duration
-// flag with specified name, default value, and usage string. The argument p
-// points to a time.Duration variable in which to store the value of the flag.
-// The flag accepts a value acceptable to time.ParseDuration.
-func Duration(p *time.Duration, name string, value time.Duration, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[time.Duration](decodeDuration))
-	c.kind = ir.KindDuration
-	return c
+// Duration returns a time.Duration flag with the specified name and usage
+// string. The argument p points to a time.Duration variable in which to
+// store the value of the flag. The flag accepts a value acceptable to
+// time.ParseDuration.
+func Duration(p *time.Duration, name, usage string) *FlagBuilder[time.Duration] {
+	return Var(p, name, usage, durationType{})
 }
 
-// Float64 returns a Flag that can be used to define a float64 flag
-// with specified name, default value, and usage string. The argument p points
-// to a float64 variable in which to store the value of the flag.
-func Float64(p *float64, name string, value float64, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[float64](decodeFloat64))
-	c.kind = ir.KindFloat
-	return c
+// Float64 returns a float64 flag with the specified name and usage
+// string. The argument p points to a float64 variable in which to store
+// the value of the flag.
+func Float64(p *float64, name, usage string) *FlagBuilder[float64] {
+	return Var(p, name, usage, float64Type{})
 }
 
-// Func returns a Flag that calls fn with its value each time it is given on
-// the command line. An error from fn is reported as a bad flag value.
+// Func returns a flag that calls fn with its value each time it is given
+// on the command line. An error from fn is reported as a bad flag value.
 //
 // The flag may be given any number of times; constrain it with
-// Flag.NArgs. Its Kind is ir.KindOpaque: fn may parse its argument as
-// anything, so the flag is not described as text the way String is.
-func Func(name, usage string, fn func(s string) error) *Flag {
-	dec := DecodeFunc[bool](func(v *bool, s string) error {
-		*v = true
-		return fn(s)
-	})
-	c := Var(new(bool), name, usage, dec).NArgs(0, 0)
-	c.defValue = ""
-	c.kind = ir.KindOpaque
-	return c
+// FlagBuilder.NArgs. Its Kind is ir.KindOpaque: fn may parse its argument
+// as anything, so the flag is not described as text the way String is.
+func Func(name, usage string, fn func(s string) error) *FlagBuilder[bool] {
+	return Var(new(bool), name, usage, funcType(fn)).NArgs(0, 0)
 }
 
-// Int returns a Flag that can be used to define an int flag with
-// specified name, default value, and usage string. The argument p points to an
-// int variable in which to store the value of the flag.
-func Int(p *int, name string, value int, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[int](decodeInt))
-	c.kind = ir.KindInt
-	return c
+// Int returns an int flag with the specified name and usage string. The
+// argument p points to an int variable in which to store the value of the
+// flag.
+func Int(p *int, name, usage string) *FlagBuilder[int] {
+	return Var(p, name, usage, intType{})
 }
 
-// Int64 returns a Flag that can be used to define an int64 flag with
-// specified name, default value, and usage string. The argument p points to an
-// int64 variable in which to store the value of the flag.
-func Int64(p *int64, name string, value int64, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[int64](decodeInt64))
-	c.kind = ir.KindInt
-	return c
+// Int64 returns an int64 flag with the specified name and usage string.
+// The argument p points to an int64 variable in which to store the value
+// of the flag.
+func Int64(p *int64, name, usage string) *FlagBuilder[int64] {
+	return Var(p, name, usage, int64Type{})
 }
 
-// String returns a Flag that can be used to define a string flag with
-// specified name, default value, and usage string. The argument p points to a
-// string variable in which to store the value of the flag.
-func String(p *string, name, value, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[string](decodeString))
-	c.kind = ir.KindString
-	return c
+// String returns a string flag with the specified name and usage string.
+// The argument p points to a string variable in which to store the value
+// of the flag.
+func String(p *string, name, usage string) *FlagBuilder[string] {
+	return Var(p, name, usage, stringType{})
 }
 
-// Strings returns a Flag that can be used to define a string slice flag with specified name,
-// default value, and usage string. The argument p points to a string slice variable in which each
+// Strings returns a string slice flag with the specified name and usage
+// string. The argument p points to a string slice variable in which each
 // flag value will be stored in command line order.
-func Strings(p *[]string, name string, value []string, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[[]string](decodeStrings)).NArgs(0, 0)
-	c.kind = ir.KindString
-	return c
+func Strings(p *[]string, name, usage string) *FlagBuilder[[]string] {
+	return Var(p, name, usage, stringsType{}).NArgs(0, 0)
 }
 
-// Uint returns a Flag that can be used to define an uint flag with
-// specified name, default value, and usage string. The argument p points to an
-// uint variable in which to store the value of the flag.
-func Uint(p *uint, name string, value uint, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[uint](decodeUint))
-	c.kind = ir.KindUint
-	return c
+// Uint returns a uint flag with the specified name and usage string. The
+// argument p points to a uint variable in which to store the value of the
+// flag.
+func Uint(p *uint, name, usage string) *FlagBuilder[uint] {
+	return Var(p, name, usage, uintType{})
 }
 
-// Uint64 returns a Flag that can be used to define an uint64 flag
-// with specified name, default value, and usage string. The argument p points
-// to an uint64 variable in which to store the value of the flag.
-func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
-	*p = value
-	c := Var(p, name, usage, DecodeFunc[uint64](decodeUint64))
-	c.kind = ir.KindUint
-	return c
+// Uint64 returns a uint64 flag with the specified name and usage string.
+// The argument p points to a uint64 variable in which to store the value
+// of the flag.
+func Uint64(p *uint64, name, usage string) *FlagBuilder[uint64] {
+	return Var(p, name, usage, uint64Type{})
 }
 
-// Unbound returns a Flag that binds no value. It is given by name alone:
+// Unbound returns a flag that binds no value. It is given by name alone:
 // it takes no argument and has no negated spelling. What it does when
 // given is whatever is chained onto it:
 //
@@ -230,16 +261,10 @@ func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
 //	Unbound("version", usage).Interrupt(printVersion)
 //
 // With nothing chained, a handler asks whether it was given with
-// Flag.IsSetIn. It cannot be a positional argument, and reads no
-// environment variable.
-func Unbound(name, usage string) *Flag {
-	return &Flag{
-		origin:   ir.NewOrigin(),
-		names:    []string{name},
-		usage:    usage,
-		minCount: defaultMinNArgs,
-		maxCount: defaultMaxNArgs,
-	}
+// FlagBuilder.IsSetIn. It cannot be a positional argument, reads no
+// environment variable, and has no Default worth setting.
+func Unbound(name, usage string) *FlagBuilder[bool] {
+	return newFlag[bool](name, usage)
 }
 
 // HelpFlag returns the interrupt that prints a command's help message.
@@ -252,7 +277,7 @@ func Unbound(name, usage string) *Flag {
 // It is persistent, so mounted on the root it answers under every
 // command, and prints the help of whichever command it was written
 // after. Mount it like any other flag. Command.HelpFlag is the shorthand.
-func HelpFlag(names ...string) *Flag {
+func HelpFlag(names ...string) *FlagBuilder[bool] {
 	if len(names) == 0 {
 		names = []string{"help", "h"}
 	}
@@ -272,7 +297,7 @@ func HelpFlag(names ...string) *Flag {
 //
 // Like HelpFlag, it ends the program before any handlers run. See
 // VersionCommand for the same thing spelled as a subcommand.
-func VersionFlag(version string, names ...string) *Flag {
+func VersionFlag(version string, names ...string) *FlagBuilder[bool] {
 	if len(names) == 0 {
 		names = []string{"version"}
 	}
@@ -304,7 +329,7 @@ func printVersion(version string) HandlerFunc {
 
 // ShowDefault specifies that the default value of this flag should be shown
 // in the help message.
-func (c *Flag) ShowDefault() *Flag {
+func (c *FlagBuilder[T]) ShowDefault() *FlagBuilder[T] {
 	c.showDefault = true
 	return c
 }
@@ -314,17 +339,17 @@ func (c *Flag) ShowDefault() *Flag {
 // value, so the flag below answers to "--verbose", "-v" and "--loud"
 // alike:
 //
-//	Bool(&v, "verbose", false, usage).Aliases("v", "loud")
+//	Bool(&v, "verbose", usage).Aliases("v", "loud")
 //
 // The first alias is the short name, and help prints it beside the
 // constructor's name. Anything after it is matched but left out of help,
 // which is what a compatibility spelling wants. A flag needing one of
 // those but no short name leaves the first alias empty:
 //
-//	String(&c, "colour", "", usage).Aliases("", "color")
+//	String(&c, "colour", usage).Aliases("", "color")
 //
 // A short name is one character from [A-Za-z0-9].
-func (c *Flag) Aliases(names ...string) *Flag {
+func (c *FlagBuilder[T]) Aliases(names ...string) *FlagBuilder[T] {
 	c.names = append(c.names, names...)
 	return c
 }
@@ -338,11 +363,11 @@ func (c *Flag) Aliases(names ...string) *Flag {
 // single character is shown as VALUE instead, since the letter says
 // nothing about what it takes:
 //
-//	Strings(&tags, "tags", nil, usage).Positional().ValueName("tag")
+//	Strings(&tags, "tags", usage).Positional().ValueName("tag")
 //
 // Give the name undecorated: "tag" is shown as TAG. A flag that takes no
 // value, such as a boolean, ignores this.
-func (c *Flag) ValueName(name string) *Flag {
+func (c *FlagBuilder[T]) ValueName(name string) *FlagBuilder[T] {
 	c.valueName = name
 	return c
 }
@@ -354,7 +379,7 @@ func (c *Flag) ValueName(name string) *Flag {
 // first operand decides between them: a word naming a subcommand runs it,
 // and any other word binds the first positional argument, after which every
 // word binds a positional argument until they are all full.
-func (c *Flag) Positional() *Flag {
+func (c *FlagBuilder[T]) Positional() *FlagBuilder[T] {
 	c.positional = true
 	return c
 }
@@ -367,8 +392,8 @@ func (c *Flag) Positional() *Flag {
 // another program, so that program's flags reach it instead of being
 // read as this command's own:
 //
-//	String(&image, "IMAGE", "", usage).Positional().EndOfOptions()
-//	Strings(&args, "ARG", nil, usage).Positional()
+//	String(&image, "IMAGE", usage).Positional().EndOfOptions()
+//	Strings(&args, "ARG", usage).Positional()
 //
 //	docker run -it alpine ls -la   ->  -it is run's; IMAGE=alpine; ARG=["ls", "-la"]
 //
@@ -377,7 +402,7 @@ func (c *Flag) Positional() *Flag {
 //	Unbound("end-of-options", usage).EndOfOptions()
 //
 //	git log --end-of-options --weird-branch   ->  REV=["--weird-branch"]
-func (c *Flag) EndOfOptions() *Flag {
+func (c *FlagBuilder[T]) EndOfOptions() *FlagBuilder[T] {
 	c.endOfOptions = true
 	return c
 }
@@ -387,13 +412,13 @@ func (c *Flag) EndOfOptions() *Flag {
 // middleware, and excuses any argument the line was required to give. The
 // flag still binds its value, so fn can read it.
 //
-//	String(&topic, "help", "", "Show help for a topic").Interrupt(showHelp)
+//	String(&topic, "help", "Show help for a topic").Interrupt(showHelp)
 //
 //	app --help deploy   ->  showHelp runs, with topic "deploy"
 //
 // Unbound builds the common case, a flag that takes no value at all. A
 // positional argument may not interrupt.
-func (c *Flag) Interrupt(fn HandlerFunc) *Flag {
+func (c *FlagBuilder[T]) Interrupt(fn HandlerFunc) *FlagBuilder[T] {
 	c.handlerFunc = fn
 	return c
 }
@@ -408,7 +433,7 @@ func (c *Flag) Interrupt(fn HandlerFunc) *Flag {
 //	NArgs(1, 1)  exactly once; see Required
 //	NArgs(0, 0)  optional, unbounded -- what Strings and Func set
 //	NArgs(1, 0)  required, unbounded
-func (c *Flag) NArgs(min, max int) *Flag {
+func (c *FlagBuilder[T]) NArgs(min, max int) *FlagBuilder[T] {
 	c.minCount = min
 	c.maxCount = max
 	return c
@@ -416,13 +441,13 @@ func (c *Flag) NArgs(min, max int) *Flag {
 
 // Required is shorthand for NArgs(1, 1) and indicates that this flag must be
 // specified on the command line once and only once.
-func (c *Flag) Required() *Flag {
+func (c *FlagBuilder[T]) Required() *FlagBuilder[T] {
 	return c.NArgs(1, 1)
 }
 
 // Hidden hides the command line flag from all help messages but still allows
 // the flag to be specified on the command line.
-func (c *Flag) Hidden() *Flag {
+func (c *FlagBuilder[T]) Hidden() *FlagBuilder[T] {
 	c.hidden = true
 	return c
 }
@@ -432,14 +457,14 @@ func (c *Flag) Hidden() *Flag {
 // means the same thing there. Otherwise a flag is valid only until the
 // command line names a subcommand. A positional argument cannot be
 // persistent.
-func (c *Flag) Persistent() *Flag {
+func (c *FlagBuilder[T]) Persistent() *FlagBuilder[T] {
 	c.persistent = true
 	return c
 }
 
 // Env allows the value of the flag to be specified with an environment
 // variable if it is not specified on the command line.
-func (c *Flag) Env(name string) *Flag {
+func (c *FlagBuilder[T]) Env(name string) *FlagBuilder[T] {
 	c.envVar = name
 	return c
 }
@@ -447,14 +472,14 @@ func (c *Flag) Env(name string) *Flag {
 // Validate specifies a function to validate an argument for this flag before
 // it is parsed. If the function returns an error, parsing will fail with the
 // same error.
-func (c *Flag) Validate(f ir.ValidateFunc) *Flag {
+func (c *FlagBuilder[T]) Validate(f ir.ValidateFunc) *FlagBuilder[T] {
 	c.validateFunc = f
 	return c
 }
 
 // Choices restricts the flag's value to one of elems: any other value
 // fails to parse, naming the legal choices.
-func (c *Flag) Choices(elems ...string) *Flag {
+func (c *FlagBuilder[T]) Choices(elems ...string) *FlagBuilder[T] {
 	c.choices = elems
 	return c.Validate(
 		func(arg string) error {
@@ -472,7 +497,7 @@ func (c *Flag) Choices(elems ...string) *Flag {
 // the flag is an option or a positional argument. It is consulted only
 // when Choices is not declared; Choices, being the enumerable case, always
 // wins.
-func (c *Flag) Complete(fn ir.CompleteFunc) *Flag {
+func (c *FlagBuilder[T]) Complete(fn ir.CompleteFunc) *FlagBuilder[T] {
 	c.completeFunc = fn
 	return c
 }
@@ -493,7 +518,7 @@ func (c *Flag) Complete(fn ir.CompleteFunc) *Flag {
 //
 // An interrupt the line named reports SourceArgs, even one that takes no
 // value.
-func (c *Flag) SourceIn(inv *Invocation) Source {
+func (c *FlagBuilder[T]) SourceIn(inv *Invocation) Source {
 	flag := inv.Resolve(c.origin)
 	if flag == nil {
 		return SourceDefault
@@ -504,7 +529,7 @@ func (c *Flag) SourceIn(inv *Invocation) Source {
 // IsSetIn reports whether the command line or the environment set this
 // flag during inv, rather than leaving it the default it was constructed
 // with. It is SourceIn(inv) != SourceDefault.
-func (c *Flag) IsSetIn(inv *Invocation) bool {
+func (c *FlagBuilder[T]) IsSetIn(inv *Invocation) bool {
 	return c.SourceIn(inv) != SourceDefault
 }
 
@@ -512,7 +537,7 @@ func (c *Flag) IsSetIn(inv *Invocation) bool {
 // whether the command inv named, or an ancestor of it, declared it. It is
 // what tells a flag nothing set from a flag the command line could not
 // have named at all, which SourceIn answers alike.
-func (c *Flag) InScope(inv *Invocation) bool {
+func (c *FlagBuilder[T]) InScope(inv *Invocation) bool {
 	return inv.Resolve(c.origin) != nil
 }
 
@@ -526,7 +551,7 @@ func (c *Flag) InScope(inv *Invocation) bool {
 // this is the last point at which the names are still undecorated. The
 // rest of flag configuration is not checked here; see ir.Flag's own
 // validation, which Compile runs over the whole lowered tree.
-func (c *Flag) lower(errs *[]error) *ir.Flag {
+func (c *flagConfig) lower(errs *[]error) *ir.Flag {
 	// A flag bound to no value is named and never given one, so it is not
 	// written as if it took one.
 	takesValue := c.value != nil && (c.positional || !isBoolValue(c.value))
@@ -560,6 +585,8 @@ func (c *Flag) lower(errs *[]error) *ir.Flag {
 		ValidateFunc:   c.validateFunc,
 		CompleteFunc:   c.completeFunc,
 		Handler:        c.handlerFunc,
+		Reset:          c.reset,
+		SetDefault:     c.setDefault,
 	}
 	c.validateNames(flag, errs)
 	return flag
@@ -568,7 +595,7 @@ func (c *Flag) lower(errs *[]error) *ir.Flag {
 // validateNames checks the names c was declared with, undecorated, and
 // records what it finds against the lowered flag so an error can name the
 // flag the way everything else does.
-func (c *Flag) validateNames(flag *ir.Flag, errs *[]error) {
+func (c *flagConfig) validateNames(flag *ir.Flag, errs *[]error) {
 	// A flag with nothing but empty slots can never be named, and has
 	// nothing for an error to report it by.
 	if canonicalName(c.names) == "" {
@@ -601,7 +628,7 @@ func canonicalName(names []string) string {
 type FlagGroup struct {
 	name  string
 	title string
-	flags []*Flag
+	flags []Flag
 }
 
 // NewFlagGroup returns a new FlagGroup with the given name that shows its
@@ -611,7 +638,7 @@ type FlagGroup struct {
 // variables it owns: mount it on a command with Command.FlagGroups, or
 // register it with Register so every command that mounts DefaultRegistry
 // picks it up.
-func NewFlagGroup(name, title string, flags ...*Flag) *FlagGroup {
+func NewFlagGroup(name, title string, flags ...Flag) *FlagGroup {
 	return &FlagGroup{
 		name:  name,
 		title: title,
@@ -620,7 +647,7 @@ func NewFlagGroup(name, title string, flags ...*Flag) *FlagGroup {
 }
 
 // Flags appends command line flags to the group.
-func (c *FlagGroup) Flags(flags ...*Flag) *FlagGroup {
+func (c *FlagGroup) Flags(flags ...Flag) *FlagGroup {
 	c.flags = append(c.flags, flags...)
 	return c
 }
@@ -646,7 +673,7 @@ func (c *FlagGroup) Flags(flags ...*Flag) *FlagGroup {
 func FromFlagSet(name, title string, fs *flag.FlagSet) *FlagGroup {
 	group := NewFlagGroup(name, title)
 	fs.VisitAll(func(f *flag.Flag) {
-		group.Flags(fromFlag(f).Persistent())
+		group.Flags(fromFlag(f))
 	})
 	return group
 }
@@ -654,17 +681,19 @@ func FromFlagSet(name, title string, fs *flag.FlagSet) *FlagGroup {
 // fromFlag returns the Flag for one imported from a flag.FlagSet. It is
 // the one way a flag.Value enters this package: the parser calls Set on
 // it directly, since it already speaks ir.Value, and its default is the
-// string the flag package rendered.
-func fromFlag(f *flag.Flag) *Flag {
-	return &Flag{
-		origin:   ir.NewOrigin(),
-		names:    []string{f.Name},
-		usage:    f.Usage,
-		defValue: f.DefValue,
-		minCount: defaultMinNArgs,
-		maxCount: defaultMaxNArgs,
-		value:    f.Value,
-		kind:     kindFromFlagValue(f.Value),
+// string the flag package rendered. It binds no T, so it is the config
+// half alone.
+func fromFlag(f *flag.Flag) *flagConfig {
+	return &flagConfig{
+		origin:     ir.NewOrigin(),
+		names:      []string{f.Name},
+		usage:      f.Usage,
+		defValue:   f.DefValue,
+		minCount:   defaultMinNArgs,
+		maxCount:   defaultMaxNArgs,
+		persistent: true,
+		value:      f.Value,
+		kind:       kindFromFlagValue(f.Value),
 	}
 }
 

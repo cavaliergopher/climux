@@ -29,24 +29,22 @@ var App = NewCommand("helloworld", "Print \"Hello, World!\"").
 			" output multiple languages.",
 	).
 	Flags(
-		// Bool flag to turn off newline printing with -n. A
-		// one-character name is a short name, so this declares "-n" and
-		// not "--n". The flag value is stored in flagNoNewLines.
+
 		Bool(
 			&flagNoNewLines,
 			"n",
-			false,
-			"Do not print the trailing newline character",
-		),
+
+			"Do not print the trailing newline character"),
 
 		// String flag to select a desired language. Can be specified with
 		// -l, --language or the HW_LANG environment variable.
 		String(
 			&flagLanguage,
 			"language",
-			"en",
-			"Language (en, es, it or nl)",
-		).
+
+			"Language (en, es, it or nl)").Default(
+
+			"en").
 			Aliases("l").
 			Env("HW_LANG"),
 
@@ -55,9 +53,9 @@ var App = NewCommand("helloworld", "Print \"Hello, World!\"").
 		Strings(
 			&flagMessage,
 			"MESSAGE",
-			nil,
-			"Optional message to print",
-		).Positional(),
+
+			"Optional message to print").
+			Positional(),
 	).
 	HandleFunc(helloWorld)
 

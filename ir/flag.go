@@ -172,6 +172,18 @@ type Flag struct {
 	// the flag came from, not what has been done to it. See Origin.
 	Origin Origin
 
+	// Reset forgets the previous reading of the flag, so that the next
+	// time the line names it is again the first, and writes nothing.
+	// SetDefault writes the flag's default into its variable if the
+	// reading never named it. The parser calls Reset for every flag in
+	// the tree before it applies argv and SetDefault for every flag
+	// afterwards, so a variable is written once per reading, or not at
+	// all. Whether the flag was named is the flag's own to know, since
+	// one declaration may compile to several nodes that share a
+	// variable. Either is nil for a flag with nothing to do.
+	Reset      func()
+	SetDefault func()
+
 	// Handler, if set, makes the flag an interrupt: naming it on the
 	// command line runs this in place of the handler of the command it was
 	// given on, which is the command the resulting Invocation names.

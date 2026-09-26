@@ -117,7 +117,6 @@
             "name": "trace",
             "kind": "bool",
             "usage": "Emit a timing trace for every command",
-            "default": "false",
             "persistent": true,
             "maxCount": 1,
             "envVar": "ORBITAL_TRACE",
@@ -338,7 +337,6 @@
                     "valueName": "TAG",
                     "kind": "string",
                     "usage": "Metadata tag to attach to this rollout (repeatable)",
-                    "default": "[]",
                     "maxCount": 5,
                     "takesValue": true,
                     "options": [
@@ -351,7 +349,6 @@
                     "name": "confirm",
                     "kind": "bool",
                     "usage": "Confirm a deploy to production",
-                    "default": "false",
                     "maxCount": 1,
                     "options": [
                       {
@@ -367,7 +364,6 @@
                     "name": "unsafe-skip-health-checks",
                     "kind": "bool",
                     "usage": "Skip post-deploy health checks",
-                    "default": "false",
                     "hidden": true,
                     "maxCount": 1,
                     "options": [
@@ -400,7 +396,6 @@
                 "valueName": "SERVICE",
                 "kind": "string",
                 "usage": "Services to tail",
-                "default": "[]",
                 "positional": true,
                 "minCount": 1,
                 "maxCount": 0,
@@ -410,7 +405,6 @@
                 "name": "follow",
                 "kind": "bool",
                 "usage": "Keep streaming until interrupted",
-                "default": "false",
                 "maxCount": 1,
                 "options": [
                   {
@@ -486,7 +480,6 @@
                 "valueName": "ARG",
                 "kind": "string",
                 "usage": "Arguments to the command",
-                "default": "[]",
                 "positional": true,
                 "maxCount": 0,
                 "takesValue": true

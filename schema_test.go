@@ -16,7 +16,7 @@ import (
 // the parser accepts, not what help shows.
 func TestSchemaCommand(t *testing.T) {
 	app := NewCommand("app", "").
-		Flags(String(new(string), "secret", "", "").Hidden()).
+		Flags(String(new(string), "secret", "").Hidden()).
 		Subcommands(
 			NewCommand("sub", ""),
 			SchemaCommand(),

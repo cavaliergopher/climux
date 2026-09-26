@@ -17,9 +17,9 @@ func TestBitField(t *testing.T) {
 	_, err := Parse(
 		NewCommand("test", "").
 			Flags(
-				BitField(&v, 0x01, "foo", false, ""),
-				BitField(&v, 0x02, "bar", false, ""),
-				BitField(&v, 0x04, "baz", true, ""),
+				BitField(&v, 0x01, "foo", ""),
+				BitField(&v, 0x02, "bar", ""),
+				BitField(&v, 0x04, "baz", "").Default(true),
 			),
 		"--foo",
 	)
@@ -29,37 +29,43 @@ func TestBitField(t *testing.T) {
 	assertInt64(t, 0x05, int64(v))
 }
 
-// TestStringsFirstNamingReplacesDefault asserts the rule every decoder
+// TestStringsFirstNamingReplacesDefault asserts the rule every VarType
 // is written against: the first naming finds the zero value, not the
 // default, so a slice flag's default is what it holds when never named
 // and nothing else.
 func TestStringsFirstNamingReplacesDefault(t *testing.T) {
 	var v []string
-	if assertFlagParses(t, Strings(&v, "foo", []string{"stable"}, ""), "--foo=a", "--foo=b") {
+	if assertFlagParses(t, Strings(&v, "foo", "").Default([]string{"stable"}), "--foo=a", "--foo=b") {
 		assertStrings(t, []string{"a", "b"}, v)
 	}
-	if assertFlagParses(t, Strings(&v, "foo", []string{"stable"}, "")) {
+	if assertFlagParses(t, Strings(&v, "foo", "").Default([]string{"stable"})) {
 		assertStrings(t, []string{"stable"}, v)
 	}
 }
 
-// TestVarAccumulates asserts that a decoder needs no state to
-// accumulate: the variable is zero on first naming, so the nil check is
-// where a map initialises, and every later naming folds into it.
+// labelsType accumulates KEY=VALUE arguments into a map, and carries no
+// state to do it: the variable is zero on first naming, so the nil check
+// is where the map initialises, and every later naming folds into it.
+type labelsType struct{}
+
+func (labelsType) Kind() ir.Kind                     { return ir.KindString }
+func (labelsType) Format(v map[string]string) string { return fmt.Sprint(v) }
+func (labelsType) Decode(v *map[string]string, s string) error {
+	k, val, ok := strings.Cut(s, "=")
+	if !ok {
+		return fmt.Errorf("want KEY=VALUE, got %q", s)
+	}
+	if *v == nil {
+		*v = map[string]string{}
+	}
+	(*v)[k] = val
+	return nil
+}
+
+// TestVarAccumulates asserts that a VarType needs no state to accumulate.
 func TestVarAccumulates(t *testing.T) {
 	var labels map[string]string
-	dec := DecodeFunc[map[string]string](func(v *map[string]string, s string) error {
-		k, val, ok := strings.Cut(s, "=")
-		if !ok {
-			return fmt.Errorf("want KEY=VALUE, got %q", s)
-		}
-		if *v == nil {
-			*v = map[string]string{}
-		}
-		(*v)[k] = val
-		return nil
-	})
-	flag := Var(&labels, "label", "", dec).NArgs(0, 0)
+	flag := Var(&labels, "label", "", labelsType{}).NArgs(0, 0)
 	if assertFlagParses(t, flag, "--label=a=1", "--label=b=2") {
 		if got, want := fmt.Sprint(labels), "map[a:1 b:2]"; got != want {
 			t.Errorf("labels = %s, want %s", got, want)
@@ -67,13 +73,15 @@ func TestVarAccumulates(t *testing.T) {
 	}
 }
 
-// yesNoDecoder reports IsBoolFlag, so a fixture can assert that a custom
-// decoder's flag stands alone on the command line as Bool's does.
-type yesNoDecoder struct{}
+// yesNoType reports IsBoolFlag, so a fixture can assert that a custom
+// type's flag stands alone on the command line as Bool's does.
+type yesNoType struct{}
 
-func (yesNoDecoder) IsBoolFlag() bool { return true }
+func (yesNoType) IsBoolFlag() bool       { return true }
+func (yesNoType) Kind() ir.Kind          { return ir.KindString }
+func (yesNoType) Format(v string) string { return v }
 
-func (yesNoDecoder) Decode(v *string, s string) error {
+func (yesNoType) Decode(v *string, s string) error {
 	switch s {
 	case "true":
 		*v = "yes"
@@ -85,11 +93,11 @@ func (yesNoDecoder) Decode(v *string, s string) error {
 	return nil
 }
 
-// TestVarIsBoolFlag asserts that a decoder with IsBoolFlag makes a flag
+// TestVarIsBoolFlag asserts that a type with IsBoolFlag makes a flag
 // that takes no argument when named alone.
 func TestVarIsBoolFlag(t *testing.T) {
 	var answer string
-	if assertFlagParses(t, Var(&answer, "confirm", "", yesNoDecoder{}), "--confirm") {
+	if assertFlagParses(t, Var(&answer, "confirm", "", yesNoType{}), "--confirm") {
 		if got, want := answer, "yes"; got != want {
 			t.Errorf("answer = %q, want %q", got, want)
 		}
@@ -100,55 +108,85 @@ func TestVarIsBoolFlag(t *testing.T) {
 // negative argument rather than wrapping it.
 func TestUintRejectsNegative(t *testing.T) {
 	var u uint
-	if _, err := Parse(NewCommand("test", "").Flags(Uint(&u, "n", 0, "")), "--n=-1"); err == nil {
+	if _, err := Parse(NewCommand("test", "").Flags(Uint(&u, "n", "")), "--n=-1"); err == nil {
 		t.Error("Uint accepted -1")
 	}
 	var u64 uint64
-	if _, err := Parse(NewCommand("test", "").Flags(Uint64(&u64, "n", 0, "")), "--n=-1"); err == nil {
+	if _, err := Parse(NewCommand("test", "").Flags(Uint64(&u64, "n", "")), "--n=-1"); err == nil {
 		t.Error("Uint64 accepted -1")
+	}
+}
+
+// TestDefault asserts that a variable is written once per parse or not
+// at all: declaring writes nothing; parsing writes what the line says,
+// else the declared default, else nothing.
+func TestDefault(t *testing.T) {
+	s := "stale"
+	flag := String(&s, "output", "").Default("json")
+	if got, want := s, "stale"; got != want {
+		t.Errorf("after declaring, s = %q, want %q", got, want)
+	}
+	if got, want := flag.defValue, "json"; got != want {
+		t.Errorf("defValue = %q, want %q", got, want)
+	}
+	if assertFlagParses(t, flag) {
+		if got, want := s, "json"; got != want {
+			t.Errorf("unnamed, after parsing s = %q, want the default %q", got, want)
+		}
+	}
+	if assertFlagParses(t, String(&s, "output", "").Default("json"), "--output=yaml") {
+		if got, want := s, "yaml"; got != want {
+			t.Errorf("named, after parsing s = %q, want %q", got, want)
+		}
+	}
+	s = "stale"
+	if assertFlagParses(t, String(&s, "output", "")) {
+		if got, want := s, "stale"; got != want {
+			t.Errorf("no Default and unnamed, after parsing s = %q, want it untouched", got)
+		}
 	}
 }
 
 func TestBool(t *testing.T) {
 	v := false
-	if assertFlagParses(t, Bool(&v, "foo", false, ""), "--foo") {
+	if assertFlagParses(t, Bool(&v, "foo", ""), "--foo") {
 		assertBool(t, true, v)
 	}
 }
 
 func TestDuration(t *testing.T) {
 	var v time.Duration
-	if assertFlagParses(t, Duration(&v, "foo", 0, ""), "--foo=1s") {
+	if assertFlagParses(t, Duration(&v, "foo", ""), "--foo=1s") {
 		assertDuration(t, time.Second, v)
 	}
-	if assertFlagParses(t, Duration(&v, "foo", 0, ""), "--foo=-1s") {
+	if assertFlagParses(t, Duration(&v, "foo", ""), "--foo=-1s") {
 		assertDuration(t, -time.Second, v)
 	}
 }
 
 func TestFloat64(t *testing.T) {
 	var v float64
-	if assertFlagParses(t, Float64(&v, "foo", 0, ""), "--foo=1.0") {
+	if assertFlagParses(t, Float64(&v, "foo", ""), "--foo=1.0") {
 		assertFloat64(t, 1.0, v)
 	}
-	if assertFlagParses(t, Float64(&v, "foo", 0, ""), "--foo=-1.0") {
+	if assertFlagParses(t, Float64(&v, "foo", ""), "--foo=-1.0") {
 		assertFloat64(t, -1.0, v)
 	}
 }
 
 func TestInt64(t *testing.T) {
 	var v int64
-	if assertFlagParses(t, Int64(&v, "foo", 0, ""), "--foo=1") {
+	if assertFlagParses(t, Int64(&v, "foo", ""), "--foo=1") {
 		assertInt64(t, 1, v)
 	}
-	if assertFlagParses(t, Int64(&v, "foo", 0, ""), "--foo=-1") {
+	if assertFlagParses(t, Int64(&v, "foo", ""), "--foo=-1") {
 		assertInt64(t, -1, v)
 	}
 }
 
 func TestString(t *testing.T) {
 	var v string
-	if assertFlagParses(t, String(&v, "foo", "", ""), "--foo=bar") {
+	if assertFlagParses(t, String(&v, "foo", ""), "--foo=bar") {
 		assertString(t, "bar", v)
 	}
 }
@@ -157,7 +195,7 @@ func TestStringSlice(t *testing.T) {
 	var v []string
 	if assertFlagParses(
 		t,
-		Strings(&v, "foo", nil, ""),
+		Strings(&v, "foo", ""),
 		"--foo", "baz", "--foo", "qux",
 	) {
 		assertStrings(t, []string{"baz", "qux"}, v)
@@ -186,7 +224,7 @@ func TestFuncError(t *testing.T) {
 
 func TestFlagChoices(t *testing.T) {
 	var v string
-	flag := String(&v, "foo", "", "").Choices("bar", "baz")
+	flag := String(&v, "foo", "").Choices("bar", "baz")
 	assertFlagParses(t, flag, "--foo=bar")
 	assertFlagParses(t, flag, "--foo=baz")
 	assertArgumentError(t, parseFlag(flag, "--foo=qux"))
@@ -194,12 +232,12 @@ func TestFlagChoices(t *testing.T) {
 	assertArgumentError(t, parseFlag(flag, "--foo=barr"))
 }
 
-func ExampleFlag_Validate() {
+func ExampleFlagBuilder_Validate() {
 	var ip string
 
 	cmd := NewCommand("ping", "").
 		Flags(
-			String(&ip, "ip", "127.0.0.1", "IP Address to ping").
+			String(&ip, "ip", "IP Address to ping").Default("127.0.0.1").
 				Validate(func(arg string) error {
 					if net.ParseIP(arg) == nil {
 						return fmt.Errorf("invalid IP: %s", arg)
@@ -237,9 +275,9 @@ func ExampleBitField() {
 
 	cmd := NewCommand("user-allow", "").
 		Flags(
-			BitField(&mode, UserRead, "r", false, "Enable user read"),
-			BitField(&mode, UserWrite, "w", false, "Enable user write"),
-			BitField(&mode, UserExecute, "x", false, "Enable user execute"),
+			BitField(&mode, UserRead, "r", "Enable user read"),
+			BitField(&mode, UserWrite, "w", "Enable user write"),
+			BitField(&mode, UserExecute, "x", "Enable user execute"),
 		).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			fmt.Fprintf(inv.Stdout, "File mode: %s\n", os.FileMode(mode))
@@ -307,7 +345,7 @@ func ExampleStrings() {
 		Flags(
 			// Configure a repeatable string slice flag that must be specified
 			// at least once.
-			Strings(&widgets, "name", nil, "Widget name").NArgs(1, 0),
+			Strings(&widgets, "name", "Widget name").NArgs(1, 0),
 		).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			fmt.Printf("Created new widgets: %s", strings.Join(widgets, ", "))
@@ -325,9 +363,9 @@ func TestFlagGroupStandalone(t *testing.T) {
 	var level, format string
 	group := NewFlagGroup(
 		"logging", "Logging options",
-		String(&level, "log-level", "info", "Set log verbosity"),
+		String(&level, "log-level", "Set log verbosity").Default("info"),
 	).Flags(
-		String(&format, "log-format", "text", "Log output format"),
+		String(&format, "log-format", "Log output format").Default("text"),
 	)
 	cmd := NewCommand("test", "").FlagGroups(group)
 
@@ -358,7 +396,7 @@ func TestFlagGroupStandalone(t *testing.T) {
 // behavior (the Value, the ValidateFunc) is dropped.
 func TestCompileFlag(t *testing.T) {
 	var s string
-	flg := String(&s, "name", "default-value", "flag usage").
+	flg := String(&s, "name", "flag usage").Default("default-value").
 		Aliases("n").
 		NArgs(1, 3).
 		Hidden().
@@ -418,8 +456,8 @@ func TestCompileTakesValue(t *testing.T) {
 	var s string
 	var b bool
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "", ""),
-		Bool(&b, "verbose", false, ""),
+		String(&s, "name", ""),
+		Bool(&b, "verbose", ""),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -440,7 +478,7 @@ func TestCompileTakesValue(t *testing.T) {
 // disallowed alongside positionals).
 func TestCompilePositional(t *testing.T) {
 	var s string
-	flg := String(&s, "ARG", "", "positional usage").Positional()
+	flg := String(&s, "ARG", "positional usage").Positional()
 	cmd := NewCommand("test", "").Flags(flg)
 
 	node, err := cmd.Compile()
@@ -461,11 +499,11 @@ func TestCompileValueName(t *testing.T) {
 	var b bool
 	var tags []string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "", "usage"),
-		String(&o, "output", "", "usage").ValueName("path"),
-		Bool(&b, "verbose", false, "usage"),
-		String(&forced, "log-level", "", "usage"),
-		Strings(&tags, "tags", nil, "usage").ValueName("tag"),
+		String(&s, "name", "usage"),
+		String(&o, "output", "usage").ValueName("path"),
+		Bool(&b, "verbose", "usage"),
+		String(&forced, "log-level", "usage"),
+		Strings(&tags, "tags", "usage").ValueName("tag"),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -484,8 +522,8 @@ func TestCompileValueName(t *testing.T) {
 func TestCompileName(t *testing.T) {
 	var s, arg string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "", "").Aliases("n", "alias"),
-		String(&arg, "ARG", "", "").Positional(),
+		String(&s, "name", "").Aliases("n", "alias"),
+		String(&arg, "ARG", "").Positional(),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -499,17 +537,17 @@ func TestCompileName(t *testing.T) {
 	}
 }
 
-// kindStringDecoder has a Kind method, so a fixture can assert that Var
-// recovers a custom decoder's declared Kind instead of defaulting to
-// ir.KindOpaque.
-type kindStringDecoder struct{}
+// kindStringType claims ir.KindString, so a fixture can assert that Var
+// reports the Kind its type declares.
+type kindStringType struct{}
 
-func (kindStringDecoder) Decode(v *string, s string) error { *v = s; return nil }
-func (kindStringDecoder) Kind() ir.Kind                    { return ir.KindString }
+func (kindStringType) Decode(v *string, s string) error { *v = s; return nil }
+func (kindStringType) Format(v string) string           { return v }
+func (kindStringType) Kind() ir.Kind                    { return ir.KindString }
 
 // TestCompileKind asserts what ir.Flag.Kind is set to by each typed
-// constructor, that Var yields ir.KindOpaque unless its decoder has a
-// Kind method, and that an interrupt, binding no value, has none.
+// constructor, that Var reports what its VarType declares, and that an
+// interrupt, binding no value, has none.
 func TestCompileKind(t *testing.T) {
 	var (
 		bo  bool
@@ -526,19 +564,19 @@ func TestCompileKind(t *testing.T) {
 		ip  net.IP
 	)
 	cmd := NewCommand("test", "").Flags(
-		Bool(&bo, "bool", false, ""),
-		BitField(&bf, 0x1, "bitfield", false, ""),
-		Duration(&du, "duration", 0, ""),
-		Float64(&fl, "float", 0, ""),
+		Bool(&bo, "bool", ""),
+		BitField(&bf, 0x1, "bitfield", ""),
+		Duration(&du, "duration", ""),
+		Float64(&fl, "float", ""),
 		Func("func", "", func(string) error { return nil }),
-		Int(&in, "int", 0, ""),
-		Int64(&i64, "int64", 0, ""),
-		String(&s, "string", "", ""),
-		Strings(&ss, "strings", nil, ""),
-		Uint(&u, "uint", 0, ""),
-		Uint64(&u64, "uint64", 0, ""),
-		Var(&ks, "kind-var", "", kindStringDecoder{}),
-		IPVar(&ip, "opaque-var", nil, ""),
+		Int(&in, "int", ""),
+		Int64(&i64, "int64", ""),
+		String(&s, "string", ""),
+		Strings(&ss, "strings", ""),
+		Uint(&u, "uint", ""),
+		Uint64(&u64, "uint64", ""),
+		Var(&ks, "kind-var", "", kindStringType{}),
+		IPVar(&ip, "opaque-var", ""),
 		Unbound("stop", "").Interrupt(func(ctx context.Context, inv *Invocation) error { return nil }),
 	)
 	node, err := cmd.Compile()
@@ -563,12 +601,12 @@ func TestCompileKind(t *testing.T) {
 func TestPositionalIsShownByItsValueName(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		flag *Flag
+		flag *FlagBuilder[string]
 		want string
 	}{
-		{"FromFlagName", String(new(string), "src", "", "usage").Positional(), "SRC"},
-		{"Overridden", String(new(string), "src", "", "usage").Positional().ValueName("path"), "PATH"},
-		{"DashesBecomeUnderscores", String(new(string), "log-level", "", "usage").Positional(), "LOG_LEVEL"},
+		{"FromFlagName", String(new(string), "src", "usage").Positional(), "SRC"},
+		{"Overridden", String(new(string), "src", "usage").Positional().ValueName("path"), "PATH"},
+		{"DashesBecomeUnderscores", String(new(string), "log-level", "usage").Positional(), "LOG_LEVEL"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := NewCommand("test", "").Flags(tt.flag.Required())
@@ -600,7 +638,7 @@ func TestPositionalIsShownByItsValueName(t *testing.T) {
 // only a short name still reports itself by one.
 func TestCanonicalNameCoalesces(t *testing.T) {
 	var s string
-	flg := String(&s, "", "", "usage").Aliases("v")
+	flg := String(&s, "", "usage").Aliases("v")
 	cmd := NewCommand("test", "").Flags(flg)
 
 	node, err := cmd.Compile()
@@ -624,7 +662,7 @@ func TestCanonicalNameCoalesces(t *testing.T) {
 func TestAliasIsMatchedButNotPrinted(t *testing.T) {
 	var s string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "colour", "", "which colour").Aliases("", "color"),
+		String(&s, "colour", "which colour").Aliases("", "color"),
 	)
 	if _, err := Parse(cmd, "--color", "red"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -653,7 +691,7 @@ func TestAliasIsMatchedButNotPrinted(t *testing.T) {
 func TestAliasPositionIsNotEnforced(t *testing.T) {
 	var s string
 	node, err := NewCommand("test", "").Flags(
-		String(&s, "foo", "", "").Aliases("xx"),
+		String(&s, "foo", "").Aliases("xx"),
 	).Compile()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

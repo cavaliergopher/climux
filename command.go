@@ -28,7 +28,7 @@ const (
 
 	// SourceEnv is a flag set from the environment variable it declared,
 	// which happens only where the command line did not set it. See
-	// Flag.EnvVar.
+	// FlagBuilder.Env.
 	SourceEnv = ir.SourceEnv
 
 	// SourceArgs is a flag the command line set, which wins over the
@@ -543,7 +543,7 @@ func (c *Command) Hidden() *Command {
 
 // Flags appends command line flags to the implicit "options" flag group
 // every command carries from construction.
-func (c *Command) Flags(flags ...*Flag) *Command {
+func (c *Command) Flags(flags ...Flag) *Command {
 	if c.defaultGroup == nil {
 		c.defaultGroup = &FlagGroup{name: "options", title: "Options"}
 		c.flagGroups = append(c.flagGroups, c.defaultGroup)

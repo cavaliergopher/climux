@@ -175,8 +175,8 @@ nothing needs to inspect a `Value` and `flag.Value` is untouched:
 - `FromFlagSet` recovers it through `flag.Getter`, whose `Get() any`
   returns the concrete value to switch on, so an imported `flag.FlagSet`
   is described as precisely as a native one.
-- `Var` yields `KindOpaque`, unless its decoder declares itself with an
-  optional `Kind` method, in the manner `IsBoolFlag` already establishes.
+- `Var` reports what its `VarType` declares, whose `Kind` method is
+  required: an author describing a type says what it is.
 
 The optional interface is the only way an author states a kind, and that
 is deliberate. A configuration setter -- `Flag.Kind(...)` at the mount

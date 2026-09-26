@@ -18,11 +18,11 @@ func setCommand() *climux.Command {
 	return climux.NewCommand("set", "Set a configuration key to a value").
 		Middleware(middleware.Audit).
 		Flags(
-			climux.String(&key, "KEY", "", "Configuration key to set").
+			climux.String(&key, "KEY", "Configuration key to set").
 				Positional().
 				Required().
 				Validate(validKey),
-			climux.String(&value, "VALUE", "", "New value").
+			climux.String(&value, "VALUE", "New value").
 				Positional().
 				Required(),
 		).

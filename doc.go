@@ -38,17 +38,19 @@ You can bind a flag to a variable using the Var functions.
 
 	var App = climux.NewCommand(os.Args[0], "").
 		Flags(
-			climux.Int(
-				&flagvar, "flagname", 1234, "help message for flagname",
-			),
+			climux.Int(&flagvar, "flagname", "help message for flagname").
+				Default(1234),
 		)
 
-Or you can bind a variable of any type by writing a Decoder for it and
-coupling the two with Var:
+Or you can bind a variable of any type by writing a VarType for it, which
+says how a value is decoded, shown and classified, and coupling the two
+with Var:
 
-	climux.Var(&flagVal, "name", "help message for flagname", myDecoder{})
+	climux.Var(&flagVal, "name", "help message for flagname", myType{})
 
-For such flags, the default value is just the initial value of the variable.
+Nothing is written to the variable until the command line is parsed, and
+then it is written once: what the command line says, or the default if
+Default declared one, or nothing at all.
 
 A handler may be defined for your command by
 
@@ -128,8 +130,8 @@ A program that keeps its declarations in variables asks them instead, which
 costs no name at all:
 
 	var (
-		outputFlag   = climux.String(&output, "output", "", "Output format")
-		templateFlag = climux.String(&template, "template", "", "Go template")
+		outputFlag   = climux.String(&output, "output", "Output format")
+		templateFlag = climux.String(&template, "template", "Go template")
 	)
 
 	func MyAppHandler(ctx context.Context, inv *climux.Invocation) error {
@@ -140,7 +142,7 @@ costs no name at all:
 		return nil
 	}
 
-Flag.IsSetIn and Flag.SourceIn answer the same two questions as the invocation's
+FlagBuilder.IsSetIn and FlagBuilder.SourceIn answer the same two questions as the invocation's
 own, and answer them better: a name is unique only along one command path, so
 two sibling commands may both declare "force" and the name form reports
 whichever is in scope. A declaration answers for itself or for nothing, and
@@ -177,7 +179,7 @@ likes.
 All three flags are interrupts, which is the whole of what makes --help
 special: they run in place of the command that was named, without its
 middleware, and answer even when the line leaves out an argument it
-requires. Make one of your own with Flag.Interrupt, often on a flag from
+requires. Make one of your own with FlagBuilder.Interrupt, often on a flag from
 Unbound, which binds no value.
 
 # Middleware

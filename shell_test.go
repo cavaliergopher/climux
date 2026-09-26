@@ -58,7 +58,7 @@ func TestRunCompletionZshSource(t *testing.T) {
 // and COMP_CWORD in, "plain," and "nofiles," lines out.
 func TestRunCompletionReply(t *testing.T) {
 	cmd := NewCommand("app", "").EnableCompletion().Flags(
-		Bool(new(bool), "verbose", false, "").Aliases("v"),
+		Bool(new(bool), "verbose", "").Aliases("v"),
 	)
 	t.Setenv("APP_COMPLETE", "bash_complete")
 	t.Setenv("COMP_WORDS", "app\n--v")
@@ -105,8 +105,8 @@ func TestRunCompletionUnknownValueFallsThrough(t *testing.T) {
 // exactly what failed to validate.
 func TestRunCompletionMalformedTreeFallsThrough(t *testing.T) {
 	cmd := NewCommand("app", "").EnableCompletion().Flags(
-		String(new(string), "foo", "", ""),
-		String(new(string), "foo", "", ""),
+		String(new(string), "foo", ""),
+		String(new(string), "foo", ""),
 	)
 	t.Setenv("APP_COMPLETE", "bash_source")
 

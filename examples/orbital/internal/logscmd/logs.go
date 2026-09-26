@@ -25,15 +25,15 @@ func Command(client *fleet.Client) *climux.Command {
 	)
 	return climux.NewCommand("logs", "Print recent log lines for one or more services").
 		Flags(
-			climux.Strings(&services, "SERVICE", nil, "Services to tail").
+			climux.Strings(&services, "SERVICE", "Services to tail").
 				Positional().
 				NArgs(1, 0).
 				Complete(func(inv *climux.Invocation, word string) ([]string, ir.CompDirective) {
 					return client.Services(), ir.CompNoFileComp
 				}),
-			climux.Bool(&follow, "follow", false, "Keep streaming until interrupted").
+			climux.Bool(&follow, "follow", "Keep streaming until interrupted").
 				Aliases("f"),
-			climux.Duration(&since, "since", 10*time.Minute, "How far back to start showing logs").
+			climux.Duration(&since, "since", "How far back to start showing logs").Default(10*time.Minute).
 				ShowDefault(),
 		).
 		HandleFunc(func(ctx context.Context, inv *climux.Invocation) error {

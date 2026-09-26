@@ -15,12 +15,12 @@ func ExampleSource() {
 	// see docs/adr/a-tree-reads-one-command-line.md.
 	run := func(args ...string) {
 		var output, template string
-		outputFlag := String(&output, "output", "table", "Output format")
+		outputFlag := String(&output, "output", "Output format").Default("table")
 
 		cmd := NewCommand("get", "Display resources").
 			Flags(
 				outputFlag,
-				String(&template, "template", "", "Go template"),
+				String(&template, "template", "Go template"),
 			).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error {
 				if template != "" && !outputFlag.IsSetIn(inv) {

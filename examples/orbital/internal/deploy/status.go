@@ -19,10 +19,10 @@ func statusCommand(client *fleet.Client) *climux.Command {
 	)
 	return climux.NewCommand("status", "Show the rollout status of a service").
 		Flags(
-			climux.String(&service, "SERVICE", "", "Service to inspect").
+			climux.String(&service, "SERVICE", "Service to inspect").
 				Positional().
 				Required(),
-			climux.Duration(&timeout, "timeout", 5*time.Second, "How long to wait for the fleet API").
+			climux.Duration(&timeout, "timeout", "How long to wait for the fleet API").Default(5*time.Second).
 				ShowDefault(),
 		).
 		HandleFunc(func(ctx context.Context, inv *climux.Invocation) error {

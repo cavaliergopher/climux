@@ -75,12 +75,12 @@ func assertStrings(t *testing.T, expect, actual []string) bool {
 	return true
 }
 
-func parseFlag(flag *Flag, args ...string) error {
+func parseFlag(flag Flag, args ...string) error {
 	_, err := Parse(NewCommand("test", "").Flags(flag), args...)
 	return err
 }
 
-func assertFlagParses(t *testing.T, flag *Flag, args ...string) bool {
+func assertFlagParses(t *testing.T, flag Flag, args ...string) bool {
 	err := parseFlag(flag, args...)
 	if err != nil {
 		t.Error(err)

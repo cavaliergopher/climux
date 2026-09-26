@@ -13,7 +13,7 @@ import (
 func TestCommandDescribe(t *testing.T) {
 	var force bool
 	add := NewCommand("add", "Add a remote").
-		Flags(Bool(&force, "force", false, "Overwrite an existing remote").Aliases("f"))
+		Flags(Bool(&force, "force", "Overwrite an existing remote").Aliases("f"))
 	NewCommand("orbital", "").Subcommands(add)
 
 	node, err := add.Compile()

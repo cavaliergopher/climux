@@ -16,7 +16,7 @@ package ir
 // and changes the arguments its users type.
 //
 // A program declaring its own flags never implements this; it writes a
-// climux.Decoder, and the root package adapts one to it.
+// climux.VarType, and the root package adapts one to it.
 type Value interface {
 	Set(s string) error
 }
@@ -51,7 +51,7 @@ const (
 	KindDuration Kind = "duration"
 
 	// KindOpaque is every value with no narrower kind to report: one
-	// whose decoder, or imported Value, does not say.
+	// whose VarType, or imported Value, does not say.
 	KindOpaque Kind = "opaque"
 )
 
@@ -60,8 +60,8 @@ const (
 //
 // A value compiles to KindOpaque unless it implements this, which lets
 // one describe what it accepts as precisely as a typed constructor, such
-// as String or Int, already does. A climux.Decoder says the same thing
-// with a Kind method of its own.
+// as String or Int, already does. A climux.VarType says the same thing
+// with its own Kind method.
 type KindValue interface {
 	Value
 	Kind() Kind

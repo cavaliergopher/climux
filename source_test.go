@@ -39,7 +39,7 @@ func TestSource(t *testing.T) {
 			}
 			var output string
 			cmd := NewCommand("app", "").Flags(
-				String(&output, "output", "json", "").Env("APP_OUTPUT"),
+				String(&output, "output", "").Default("json").Env("APP_OUTPUT"),
 			)
 			inv, err := Parse(cmd, tt.args...)
 			if err != nil {
@@ -61,7 +61,7 @@ func TestSource(t *testing.T) {
 // apart.
 func TestSourceUndeclared(t *testing.T) {
 	var verbose bool
-	cmd := NewCommand("app", "").Flags(Bool(&verbose, "verbose", false, ""))
+	cmd := NewCommand("app", "").Flags(Bool(&verbose, "verbose", ""))
 	inv, err := Parse(cmd, "--verbose")
 	if err != nil {
 		t.Fatal(err)
@@ -86,10 +86,10 @@ func TestSourceScope(t *testing.T) {
 	var verbose bool
 	var force bool
 	sub := NewCommand("deploy", "").
-		Flags(Bool(&force, "force", false, "")).
+		Flags(Bool(&force, "force", "")).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
 	cmd := NewCommand("app", "").
-		Flags(Bool(&verbose, "verbose", false, "")).
+		Flags(Bool(&verbose, "verbose", "")).
 		Subcommands(sub)
 
 	inv, err := Parse(cmd, "--verbose", "deploy")
@@ -123,7 +123,7 @@ func TestSourcePositional(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var target string
 			cmd := NewCommand("app", "").Flags(
-				String(&target, "TARGET", "", "").Positional(),
+				String(&target, "TARGET", "").Positional(),
 			)
 			inv, err := Parse(cmd, tt.args...)
 			if err != nil {
@@ -141,7 +141,7 @@ func TestSourcePositional(t *testing.T) {
 func TestSourceRepeated(t *testing.T) {
 	var tags []string
 	cmd := NewCommand("app", "").Flags(
-		Strings(&tags, "tag", nil, "").NArgs(0, 0),
+		Strings(&tags, "tag", "").NArgs(0, 0),
 	)
 	inv, err := Parse(cmd, "--tag", "a", "--tag", "b")
 	if err != nil {
@@ -162,8 +162,8 @@ func TestSourceInterrupt(t *testing.T) {
 	var output string
 	cmd := NewCommand("app", "").
 		Flags(
-			Bool(&verbose, "verbose", false, ""),
-			String(&output, "output", "json", "").Env("APP_OUTPUT"),
+			Bool(&verbose, "verbose", ""),
+			String(&output, "output", "").Default("json").Env("APP_OUTPUT"),
 		).
 		HelpFlag()
 
@@ -219,7 +219,7 @@ func TestSourceInHandle(t *testing.T) {
 				t.Setenv("APP_OUTPUT", tt.env)
 			}
 			var output string
-			outputFlag := String(&output, "output", "json", "").Env("APP_OUTPUT")
+			outputFlag := String(&output, "output", "").Default("json").Env("APP_OUTPUT")
 			cmd := NewCommand("app", "").Flags(outputFlag)
 
 			inv, err := Parse(cmd, tt.args...)
@@ -245,8 +245,8 @@ func TestSourceInHandle(t *testing.T) {
 // holding the other declaration.
 func TestSourceInOtherSubtree(t *testing.T) {
 	var deployForce, pushForce bool
-	deployFlag := Bool(&deployForce, "force", false, "")
-	pushFlag := Bool(&pushForce, "force", false, "")
+	deployFlag := Bool(&deployForce, "force", "")
+	pushFlag := Bool(&pushForce, "force", "")
 	cmd := NewCommand("app", "").Subcommands(
 		NewCommand("deploy", "").Flags(deployFlag).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil }),
@@ -277,7 +277,7 @@ func TestSourceInOtherSubtree(t *testing.T) {
 // declared, which is in scope for every command beneath it.
 func TestSourceInAncestor(t *testing.T) {
 	var verbose bool
-	verboseFlag := Bool(&verbose, "verbose", false, "")
+	verboseFlag := Bool(&verbose, "verbose", "")
 	cmd := NewCommand("app", "").
 		Flags(verboseFlag).
 		Subcommands(NewCommand("deploy", "").
@@ -297,7 +297,7 @@ func TestSourceInAncestor(t *testing.T) {
 // The handle resolves to whichever of them was in scope.
 func TestSourceInMountedTwice(t *testing.T) {
 	var dryRun bool
-	dryRunFlag := Bool(&dryRun, "dry-run", false, "")
+	dryRunFlag := Bool(&dryRun, "dry-run", "")
 	registry := &Registry{}
 	registry.FlagGroups(NewFlagGroup("shared", "Shared", dryRunFlag))
 
@@ -380,7 +380,7 @@ func TestOriginsAreDistinct(t *testing.T) {
 // TestResolveZeroOrigin covers a flag no declaration was lowered into,
 // which is what a tree assembled by hand out of ir types holds.
 func TestResolveZeroOrigin(t *testing.T) {
-	cmd := NewCommand("app", "").Flags(Bool(new(bool), "verbose", false, ""))
+	cmd := NewCommand("app", "").Flags(Bool(new(bool), "verbose", ""))
 	inv, err := Parse(cmd)
 	if err != nil {
 		t.Fatal(err)

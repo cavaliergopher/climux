@@ -20,14 +20,14 @@ func Command() *climux.Command {
 	return climux.NewCommand("exec", "Run a one-off command inside a service's container").
 		Middleware(middleware.Audit).
 		Flags(
-			climux.String(&service, "service", "", "Service whose container to exec into").
+			climux.String(&service, "service", "Service whose container to exec into").
 				Aliases("s").
 				Required(),
-			climux.String(&command, "cmd", "", "Command to run inside the container").
+			climux.String(&command, "cmd", "Command to run inside the container").
 				Positional().
 				Required().
 				EndOfOptions(),
-			climux.Strings(&args, "arg", nil, "Arguments to the command").
+			climux.Strings(&args, "arg", "Arguments to the command").
 				Positional(),
 		).
 		HandleFunc(

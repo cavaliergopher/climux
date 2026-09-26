@@ -29,11 +29,11 @@ type Settings struct {
 func (s *Settings) FlagGroup() *climux.FlagGroup {
 	return climux.NewFlagGroup(
 		"telemetry", "Telemetry options",
-		climux.String(&s.LogLevel, "log-level", "info", "Set the log verbosity").
+		climux.String(&s.LogLevel, "log-level", "Set the log verbosity").Default("info").
 			Choices("debug", "info", "warn", "error").
 			ShowDefault().
 			Persistent(),
-		climux.Bool(&s.Trace, "trace", false, "Emit a timing trace for every command").
+		climux.Bool(&s.Trace, "trace", "Emit a timing trace for every command").
 			Env("ORBITAL_TRACE").
 			Persistent(),
 	)

@@ -45,7 +45,7 @@ var flagName string
 
 var App = climux.NewCommand("greet", "Print a greeting").
 	Flags(
-		climux.String(&flagName, "name", "World", "Who to greet"),
+		climux.String(&flagName, "name", "Who to greet").Default("World"),
 	).
 	HandleFunc(func(ctx context.Context, inv *climux.Invocation) error {
 		fmt.Fprintf(inv.Stdout, "Hello, %s!\n", flagName)
@@ -85,7 +85,7 @@ no name — which also settles the case the name form cannot, where two sibling
 commands both declare `--force`:
 
 ```go
-var outputFlag = climux.String(&output, "output", "", "Output format")
+var outputFlag = climux.String(&output, "output", "Output format")
 
 func Deploy(ctx context.Context, inv *climux.Invocation) error {
 	if template != "" && !outputFlag.IsSetIn(inv) {

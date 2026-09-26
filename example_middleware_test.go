@@ -53,11 +53,13 @@ func Example_middleware() {
 	// subcommand below knows they exist.
 	//
 	// The tree is built per run because one command line is all a tree
-	// reads: this example shows three, where a program shows one.
+	// reads: this example shows three, where a program shows one. The
+	// variable is shared across them, so the flag says what an unnamed
+	// --actor means rather than leaving the last run's answer in place.
 	newApp := func() *Command {
 		return NewCommand("fleet", "Operate the fleet").
 			Middleware(requireActor, timing).
-			Flags(String(&auditFlags.actor, "actor", "", "Who is running this")).
+			Flags(String(&auditFlags.actor, "actor", "Who is running this").Default("")).
 			Subcommands(
 				NewCommand("restart", "Restart a service").
 					HandleFunc(func(ctx context.Context, inv *Invocation) error {

@@ -53,8 +53,8 @@ var outFile string
 // middleware because neither is any use without the other; main.go
 // declares both on the root, so every command in the tree can be
 // redirected.
-func OutputFlag() *climux.Flag {
-	return climux.String(&outFile, "out", "",
+func OutputFlag() climux.Flag {
+	return climux.String(&outFile, "out",
 		"Write command output to FILE instead of stdout").
 		ValueName("file").
 		Persistent()

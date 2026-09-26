@@ -56,7 +56,7 @@ func main() {
 		FlagGroups(legacy.FlagGroup()).
 		Mount(climux.DefaultRegistry).
 		Flags(
-			climux.String(&identity.Actor, "actor", "", "Identity performing this action, recorded for the audit trail").
+			climux.String(&identity.Actor, "actor", "Identity performing this action, recorded for the audit trail").
 				Required().
 				Env("ORBITAL_ACTOR").
 				Persistent(),

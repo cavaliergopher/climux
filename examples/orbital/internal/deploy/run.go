@@ -25,26 +25,26 @@ func runCommand(client *fleet.Client) *climux.Command {
 	return climux.NewCommand("run", "Roll out a new version of a service").
 		Middleware(middleware.Audit).
 		Flags(
-			climux.String(&service, "service", "", "Service to deploy").
+			climux.String(&service, "service", "Service to deploy").
 				Aliases("s").
 				Required(),
 			// Not "--version": the root mounts one to report orbital's
 			// own, and a name claimed there is claimed for the whole
 			// tree. Compile reports the clash rather than letting a
 			// deploy silently print a version instead.
-			climux.String(&release, "release", "", "Release to deploy, such as a git SHA").
+			climux.String(&release, "release", "Release to deploy, such as a git SHA").
 				Required().
 				Validate(validRelease),
-			climux.String(&env, "env", "staging", "Environment to deploy to").
+			climux.String(&env, "env", "Environment to deploy to").Default("staging").
 				Choices("staging", "production").
 				ShowDefault(),
-			climux.String(&strategy, "strategy", "rolling", "Rollout strategy").
+			climux.String(&strategy, "strategy", "Rollout strategy").Default("rolling").
 				Choices("rolling", "blue-green", "canary").
 				ShowDefault(),
-			climux.Strings(&tags, "tag", nil, "Metadata tag to attach to this rollout (repeatable)").
+			climux.Strings(&tags, "tag", "Metadata tag to attach to this rollout (repeatable)").
 				NArgs(0, 5),
-			climux.Bool(&confirm, "confirm", false, "Confirm a deploy to production"),
-			climux.Bool(&skipHealth, "unsafe-skip-health-checks", false, "Skip post-deploy health checks").
+			climux.Bool(&confirm, "confirm", "Confirm a deploy to production"),
+			climux.Bool(&skipHealth, "unsafe-skip-health-checks", "Skip post-deploy health checks").
 				Hidden(),
 		).
 		HandleFunc(
