@@ -105,7 +105,13 @@ type HandlerFunc func(ctx context.Context, inv *Invocation) error
 // be hidden from an encoder to keep any of it out of a document. See the
 // package doc for the three-type model this is the middle of.
 type Command struct {
-	Name        string
+	Name string
+
+	// Aliases are further names the command answers to on the command
+	// line. FullName and Ancestry use Name alone, however the command
+	// was reached.
+	Aliases []Alias
+
 	Summary     string
 	Description string
 	Hidden      bool
@@ -162,6 +168,15 @@ type Command struct {
 	// method has to go looking for; it is nil only when no command on the
 	// path set one, and Usage falls back to the default renderer.
 	UsageFunc UsageFunc
+}
+
+// An Alias is a further name a command answers to on the command line.
+type Alias struct {
+	Name string
+
+	// Hidden reports that help leaves the alias out, though the command
+	// line still reaches the command by it.
+	Hidden bool
 }
 
 // ScopedFlags returns the flags the command line may write once it has
@@ -239,6 +254,9 @@ func (c *Command) Describe() *desc.Command {
 		Summary:     c.Summary,
 		Description: c.Description,
 		Hidden:      c.Hidden,
+	}
+	for _, alias := range c.Aliases {
+		cmd.Aliases = append(cmd.Aliases, desc.Alias{Name: alias.Name, Hidden: alias.Hidden})
 	}
 	for _, group := range c.FlagGroups {
 		cmd.FlagGroups = append(cmd.FlagGroups, group.Describe())

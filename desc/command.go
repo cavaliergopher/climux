@@ -17,6 +17,10 @@ type Command struct {
 	// "orbital remote add".
 	FullName string `json:"fullName"`
 
+	// Aliases are further names the command answers to on the command
+	// line. FullName uses Name alone.
+	Aliases []Alias `json:"aliases,omitempty"`
+
 	Summary     string `json:"summary,omitempty"`
 	Description string `json:"description,omitempty"`
 

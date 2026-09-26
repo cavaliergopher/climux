@@ -15,6 +15,20 @@ func Bisect() *climux.Command {
 	)
 }
 
+// Status mimics '$ git status', and '$ git st' with alias.st set to
+// "status -sb" in the user's config.
+func Status() *climux.Command {
+	return climux.NewCommand("git", "").Subcommands(
+		climux.NewCommand("status", "").Aliases("st").Flags(
+			climux.Bool("short", "").Aliases("s"),
+			climux.Bool("branch", "").Aliases("b"),
+			// git's -u may be given bare, which means "all". This one
+			// needs a value, which -uno gives it; see optional-value.
+			climux.String("untracked-files", "").Aliases("u"),
+		),
+	)
+}
+
 // Log mimics '$ git log'.
 func Log() *climux.Command {
 	return climux.NewCommand("git", "").Subcommands(

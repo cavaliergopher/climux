@@ -291,7 +291,13 @@ func detailSubcommands(w io.Writer, subcommands []*Command) error {
 		if cmd.Hidden {
 			continue
 		}
-		if _, err := fmt.Fprintf(tw, "  %s\t%s\n", cmd.Name, cmd.Summary); err != nil {
+		names := []string{cmd.Name}
+		for _, alias := range cmd.Aliases {
+			if !alias.Hidden {
+				names = append(names, alias.Name)
+			}
+		}
+		if _, err := fmt.Fprintf(tw, "  %s\t%s\n", strings.Join(names, ", "), cmd.Summary); err != nil {
 			return err
 		}
 	}

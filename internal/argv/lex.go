@@ -189,6 +189,9 @@ func (lx *lexer) enterCommand(cmd *ir.Command) {
 	lx.subcommandsByName = make(map[string]*ir.Command)
 	for _, sub := range cmd.Subcommands {
 		lx.subcommandsByName[sub.Name] = sub
+		for _, alias := range sub.Aliases {
+			lx.subcommandsByName[alias.Name] = sub
+		}
 	}
 }
 

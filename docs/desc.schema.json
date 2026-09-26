@@ -29,6 +29,11 @@
           "type": "string",
           "description": "Name joined with each ancestor's, from the root down: \"orbital remote add\"."
         },
+        "aliases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/alias" },
+          "description": "Further names the command answers to on the command line. fullName uses name alone."
+        },
         "summary": {
           "type": "string"
         },
@@ -46,6 +51,21 @@
         "subcommands": {
           "type": "array",
           "items": { "$ref": "#/$defs/command" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "alias": {
+      "type": "object",
+      "description": "A further name a command answers to on the command line. May gain further properties in a later document at this schema version.",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "The alias is omitted from help output. The command line still reaches the command by it."
         }
       },
       "additionalProperties": true

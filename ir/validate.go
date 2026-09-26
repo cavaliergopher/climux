@@ -33,6 +33,14 @@ func validateTree(c *Command) error {
 func validateSelf(c *Command) error {
 	var errs []error
 
+	// The root is reached by the executable rather than a word, but its
+	// name is what help, version and completion print for the program.
+	// A subcommand's is checked by its parent, below.
+	if c.Root == c && c.Name == "" {
+		errs = append(errs, newConfigErrorf(nil, nil, nil,
+			"the root command has an empty name"))
+	}
+
 	// A subcommand beneath an interrupt would answer in its place without
 	// its properties -- a missing required argument reported again, its
 	// ancestors' middleware run again -- so "app help topic" would behave
@@ -48,13 +56,34 @@ func validateSelf(c *Command) error {
 	// this worth catching is a command's own children against those a
 	// mounted Registry contributed: without the check, a name a program
 	// declared can be taken over by a package it merely links in.
+	// An alias is a word dispatch resolves like any name, so it collides
+	// the same way. An empty one is no word at all: nothing on a command
+	// line reaches it.
 	named := make(map[string]bool, len(c.Subcommands))
 	for _, sub := range c.Subcommands {
-		if named[sub.Name] {
+		if sub.Name == "" {
 			errs = append(errs, newConfigErrorf(nil, c, nil,
-				"more than one subcommand named %q", sub.Name))
+				"a subcommand has an empty name"))
 		}
-		named[sub.Name] = true
+		names := []string{sub.Name}
+		for _, alias := range sub.Aliases {
+			if alias.Name == "" {
+				errs = append(errs, newConfigErrorf(nil, c, nil,
+					"subcommand %q has an empty alias", sub.Name))
+				continue
+			}
+			names = append(names, alias.Name)
+		}
+		for _, name := range names {
+			if name == "" {
+				continue
+			}
+			if named[name] {
+				errs = append(errs, newConfigErrorf(nil, c, nil,
+					"more than one subcommand named %q", name))
+			}
+			named[name] = true
+		}
 	}
 
 	hasUnboundedPositional := false

@@ -78,6 +78,7 @@ type Command struct {
 	name        string
 	summary     string
 	description string
+	aliases     []ir.Alias
 	hidden      bool
 
 	// interrupt, if set, is what makes the command an interrupt, the
@@ -326,6 +327,7 @@ func (c *Command) lower(parent *ir.Command, inherited Middleware, nodeMap map[*C
 	}
 	node := &ir.Command{
 		Name:        c.name,
+		Aliases:     slices.Clone(c.aliases),
 		Summary:     c.summary,
 		Description: c.description,
 		Hidden:      c.hidden,
@@ -531,6 +533,36 @@ func (c *Command) HandleFunc(handler HandlerFunc) *Command {
 // so neither runs a wrapper. See Middleware.
 func (c *Command) Middleware(mw ...Middleware) *Command {
 	c.middleware = append(c.middleware, mw...)
+	return c
+}
+
+// Aliases specifies further names the command answers to, after the one
+// its constructor gave. Each reaches the same command, which is still
+// reported by its first name, so both lines below run "app remove":
+//
+//	NewCommand("remove", usage).Aliases("rm")
+//
+//	app remove old.txt
+//	app rm old.txt
+//
+// Help lists the aliases beside the command's name. An alias must not be
+// empty. See HiddenAliases for a name help leaves out.
+func (c *Command) Aliases(names ...string) *Command {
+	for _, name := range names {
+		c.aliases = append(c.aliases, ir.Alias{Name: name})
+	}
+	return c
+}
+
+// HiddenAliases specifies further names the command answers to, as
+// Aliases does, but leaves them out of help. It suits an old name kept
+// working after a rename:
+//
+//	NewCommand("remove", usage).HiddenAliases("delete")
+func (c *Command) HiddenAliases(names ...string) *Command {
+	for _, name := range names {
+		c.aliases = append(c.aliases, ir.Alias{Name: name, Hidden: true})
+	}
 	return c
 }
 

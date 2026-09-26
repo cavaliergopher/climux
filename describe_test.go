@@ -13,6 +13,8 @@ import (
 func TestCommandDescribe(t *testing.T) {
 	var force bool
 	add := NewCommand("add", "Add a remote").
+		Aliases("a").
+		HiddenAliases("new").
 		Flags(Bool("force", "Overwrite an existing remote").Bind(&force).Aliases("f"))
 	NewCommand("orbital", "").Subcommands(add)
 
@@ -24,6 +26,13 @@ func TestCommandDescribe(t *testing.T) {
 
 	if got, want := got.FullName, "orbital add"; got != want {
 		t.Errorf("FullName = %q, want %q", got, want)
+	}
+	aliases, err := json.Marshal(got.Aliases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(aliases), `[{"name":"a"},{"name":"new","hidden":true}]`; got != want {
+		t.Errorf("Aliases = %s, want %s", got, want)
 	}
 	if got, want := len(got.FlagGroups), 1; got != want {
 		t.Fatalf("len(FlagGroups) = %d, want %d", got, want)

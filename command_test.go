@@ -286,6 +286,43 @@ func TestSubcommandDuplicateName(t *testing.T) {
 	), "two subcommands sharing a name")
 }
 
+// TestSubcommandAliasCollides asserts that an alias collides with a
+// sibling's name or alias the way two names do, since dispatch resolves
+// every one of them to a single command.
+func TestSubcommandAliasCollides(t *testing.T) {
+	handle := func(ctx context.Context, inv *Invocation) error { return nil }
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("run", "").Aliases("r").HandleFunc(handle),
+		NewCommand("r", "").HandleFunc(handle),
+	), "an alias sharing a sibling's name")
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("run", "").Aliases("r").HandleFunc(handle),
+		NewCommand("remove", "").Aliases("r").HandleFunc(handle),
+	), "two siblings sharing an alias")
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("run", "").HiddenAliases("r").HandleFunc(handle),
+		NewCommand("r", "").HandleFunc(handle),
+	), "a hidden alias sharing a sibling's name")
+}
+
+// TestCommandEmptyName asserts that an empty command name or alias is
+// a configuration error: no word on a command line reaches a subcommand
+// by it, and the root's is what the program is printed as.
+func TestCommandEmptyName(t *testing.T) {
+	handle := func(ctx context.Context, inv *Invocation) error { return nil }
+	assertConfigError(t, NewCommand("", "").HandleFunc(handle),
+		"an empty root name")
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("", "").HandleFunc(handle),
+	), "an empty subcommand name")
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("run", "").Aliases("").HandleFunc(handle),
+	), "an empty alias")
+	assertConfigError(t, NewCommand("app", "").Subcommands(
+		NewCommand("run", "").HiddenAliases("").HandleFunc(handle),
+	), "an empty hidden alias")
+}
+
 // TestSubcommandCycle asserts that a command tree that leads back into
 // itself is reported as a ConfigError rather than walked forever. Every
 // shape here wedged the process before the tree could be validated: the
@@ -477,6 +514,67 @@ func ExampleCommand_Subcommands() {
 	//
 	// + widgets create -n=3
 	// Created 3 widget(s)
+}
+
+func ExampleCommand_Aliases() {
+	remove := NewCommand("remove", "Remove widgets").
+		Aliases("rm").
+		HandleFunc(func(ctx context.Context, inv *Invocation) error {
+			fmt.Println("Running", inv.Cmd.FullName)
+			return nil
+		})
+	cmd := NewCommand("widgets", "").HelpFlag().Subcommands(remove)
+
+	ctx := context.Background()
+	fmt.Println("+ widgets --help")
+	Run(ctx, cmd, WithArgs("--help"))
+
+	fmt.Println()
+	fmt.Println("+ widgets rm")
+	Run(ctx, cmd, WithArgs("rm"))
+	// Output:
+	// + widgets --help
+	// Usage: widgets [OPTIONS] COMMAND
+	//
+	// Options:
+	//   -h, --help  Show this help message and exit
+	//
+	// Commands:
+	//   remove, rm  Remove widgets
+	//
+	// + widgets rm
+	// Running widgets remove
+}
+
+func ExampleCommand_HiddenAliases() {
+	remove := NewCommand("remove", "Remove widgets").
+		Aliases("rm").
+		HiddenAliases("delete").
+		HandleFunc(func(ctx context.Context, inv *Invocation) error {
+			fmt.Println("Running", inv.Cmd.FullName)
+			return nil
+		})
+	cmd := NewCommand("widgets", "").HelpFlag().Subcommands(remove)
+
+	ctx := context.Background()
+	fmt.Println("+ widgets --help")
+	Run(ctx, cmd, WithArgs("--help"))
+
+	fmt.Println()
+	fmt.Println("+ widgets delete")
+	Run(ctx, cmd, WithArgs("delete"))
+	// Output:
+	// + widgets --help
+	// Usage: widgets [OPTIONS] COMMAND
+	//
+	// Options:
+	//   -h, --help  Show this help message and exit
+	//
+	// Commands:
+	//   remove, rm  Remove widgets
+	//
+	// + widgets delete
+	// Running widgets remove
 }
 
 func ExampleCommand_Description() {
