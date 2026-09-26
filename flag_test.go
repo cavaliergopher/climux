@@ -29,6 +29,86 @@ func TestBitField(t *testing.T) {
 	assertInt64(t, 0x05, int64(v))
 }
 
+// TestStringsFirstNamingReplacesDefault asserts the rule every decoder
+// is written against: the first naming finds the zero value, not the
+// default, so a slice flag's default is what it holds when never named
+// and nothing else.
+func TestStringsFirstNamingReplacesDefault(t *testing.T) {
+	var v []string
+	if assertFlagParses(t, Strings(&v, "foo", []string{"stable"}, ""), "--foo=a", "--foo=b") {
+		assertStrings(t, []string{"a", "b"}, v)
+	}
+	if assertFlagParses(t, Strings(&v, "foo", []string{"stable"}, "")) {
+		assertStrings(t, []string{"stable"}, v)
+	}
+}
+
+// TestVarAccumulates asserts that a decoder needs no state to
+// accumulate: the variable is zero on first naming, so the nil check is
+// where a map initialises, and every later naming folds into it.
+func TestVarAccumulates(t *testing.T) {
+	var labels map[string]string
+	dec := DecodeFunc[map[string]string](func(v *map[string]string, s string) error {
+		k, val, ok := strings.Cut(s, "=")
+		if !ok {
+			return fmt.Errorf("want KEY=VALUE, got %q", s)
+		}
+		if *v == nil {
+			*v = map[string]string{}
+		}
+		(*v)[k] = val
+		return nil
+	})
+	flag := Var(&labels, "label", "", dec).NArgs(0, 0)
+	if assertFlagParses(t, flag, "--label=a=1", "--label=b=2") {
+		if got, want := fmt.Sprint(labels), "map[a:1 b:2]"; got != want {
+			t.Errorf("labels = %s, want %s", got, want)
+		}
+	}
+}
+
+// yesNoDecoder reports IsBoolFlag, so a fixture can assert that a custom
+// decoder's flag stands alone on the command line as Bool's does.
+type yesNoDecoder struct{}
+
+func (yesNoDecoder) IsBoolFlag() bool { return true }
+
+func (yesNoDecoder) Decode(v *string, s string) error {
+	switch s {
+	case "true":
+		*v = "yes"
+	case "false":
+		*v = "no"
+	default:
+		return fmt.Errorf("want true or false, got %q", s)
+	}
+	return nil
+}
+
+// TestVarIsBoolFlag asserts that a decoder with IsBoolFlag makes a flag
+// that takes no argument when named alone.
+func TestVarIsBoolFlag(t *testing.T) {
+	var answer string
+	if assertFlagParses(t, Var(&answer, "confirm", "", yesNoDecoder{}), "--confirm") {
+		if got, want := answer, "yes"; got != want {
+			t.Errorf("answer = %q, want %q", got, want)
+		}
+	}
+}
+
+// TestUintRejectsNegative asserts that an unsigned flag refuses a
+// negative argument rather than wrapping it.
+func TestUintRejectsNegative(t *testing.T) {
+	var u uint
+	if _, err := Parse(NewCommand("test", "").Flags(Uint(&u, "n", 0, "")), "--n=-1"); err == nil {
+		t.Error("Uint accepted -1")
+	}
+	var u64 uint64
+	if _, err := Parse(NewCommand("test", "").Flags(Uint64(&u64, "n", 0, "")), "--n=-1"); err == nil {
+		t.Error("Uint64 accepted -1")
+	}
+}
+
 func TestBool(t *testing.T) {
 	v := false
 	if assertFlagParses(t, Bool(&v, "foo", false, ""), "--foo") {
@@ -419,17 +499,17 @@ func TestCompileName(t *testing.T) {
 	}
 }
 
-// kindStringValue implements ir.KindValue, so a fixture can assert that
-// Var recovers a custom value's declared Kind instead of defaulting to
+// kindStringDecoder has a Kind method, so a fixture can assert that Var
+// recovers a custom decoder's declared Kind instead of defaulting to
 // ir.KindOpaque.
-type kindStringValue string
+type kindStringDecoder struct{}
 
-func (v *kindStringValue) Set(s string) error { *v = kindStringValue(s); return nil }
-func (v *kindStringValue) Kind() ir.Kind      { return ir.KindString }
+func (kindStringDecoder) Decode(v *string, s string) error { *v = s; return nil }
+func (kindStringDecoder) Kind() ir.Kind                    { return ir.KindString }
 
 // TestCompileKind asserts what ir.Flag.Kind is set to by each typed
-// constructor, that Var yields ir.KindOpaque unless its value implements
-// ir.KindValue, and that an interrupt, binding no value, has none.
+// constructor, that Var yields ir.KindOpaque unless its decoder has a
+// Kind method, and that an interrupt, binding no value, has none.
 func TestCompileKind(t *testing.T) {
 	var (
 		bo  bool
@@ -442,7 +522,7 @@ func TestCompileKind(t *testing.T) {
 		ss  []string
 		u   uint
 		u64 uint64
-		ks  kindStringValue
+		ks  string
 		ip  net.IP
 	)
 	cmd := NewCommand("test", "").Flags(
@@ -457,7 +537,7 @@ func TestCompileKind(t *testing.T) {
 		Strings(&ss, "strings", nil, ""),
 		Uint(&u, "uint", 0, ""),
 		Uint64(&u64, "uint64", 0, ""),
-		Var(&ks, "kind-var", ""),
+		Var(&ks, "kind-var", "", kindStringDecoder{}),
 		IPVar(&ip, "opaque-var", nil, ""),
 		Unbound("stop", "").Interrupt(func(ctx context.Context, inv *Invocation) error { return nil }),
 	)

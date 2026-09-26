@@ -72,46 +72,44 @@ type Flag struct {
 	origin ir.Origin
 }
 
-// Var returns a Flag that can be used to define a command line flag with
-// custom value parsing.
+// Var returns a Flag that can be used to define a command line flag whose
+// value dec decodes. The argument p points to a variable in which to
+// store the value of the flag, and its initial value is the flag's
+// default.
 //
 // name becomes the flag's canonical name: one character is spelled with a
-// single dash, so Var(v, "n", usage) declares "-n", and anything longer
-// takes two. Add further names with Flag.Aliases.
+// single dash, so Var(p, "n", usage, dec) declares "-n", and anything
+// longer takes two. Add further names with Flag.Aliases.
 //
-// The flag's Kind is ir.KindOpaque unless value implements
-// ir.KindValue, which lets a custom value describe what it accepts as
-// precisely as a typed constructor such as String or Int already does.
-func Var(value ir.Value, name, usage string) *Flag {
+// The flag's Kind is ir.KindOpaque unless dec has a Kind method, which
+// lets a custom decoder describe what it accepts as precisely as a typed
+// constructor such as String or Int already does. See Decoder.
+func Var[T any](p *T, name, usage string, dec Decoder[T]) *Flag {
+	v := &value[T]{p: p, dec: dec}
 	return &Flag{
 		origin:   ir.NewOrigin(),
 		names:    []string{name},
 		usage:    usage,
+		defValue: fmt.Sprint(*p),
 		minCount: defaultMinNArgs,
 		maxCount: defaultMaxNArgs,
-		value:    value,
-		kind:     kindOf(value),
+		value:    v,
+		kind:     kindOf(v),
 	}
 }
 
-// stringifyDefault returns the string form of a flag's default value, using
-// its Value's String method if it implements fmt.Stringer.
-func stringifyDefault(v ir.Value) string {
-	if s, ok := v.(fmt.Stringer); ok {
-		return s.String()
-	}
-	return ""
-}
-
-// BitField returns a Flag that can be used to define a uint64 flag
-// with specified name, default value, and usage string. The argument p points
-// to a uint64 variable in which to toggle each of the bits in the mask
-// argument. You can specify multiple BitFieldVars to toggle bits in the same
-// underlying uint64.
+// BitField returns a Flag that can be used to define a bool flag with
+// specified name, default value, and usage string, which sets the bits of
+// mask in the uint64 variable p points to when it is true. Several
+// BitFields may share one variable, each setting its own bits. A false
+// leaves the variable as it is.
 func BitField(p *uint64, mask uint64, name string, value bool, usage string) *Flag {
-	v := newBitFieldValue(value, p, mask)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	if value {
+		*p |= mask
+	}
+	bit := new(bool)
+	*bit = value
+	c := Var(bit, name, usage, bitFieldDecoder{word: p, mask: mask})
 	c.kind = ir.KindBool
 	return c
 }
@@ -120,9 +118,8 @@ func BitField(p *uint64, mask uint64, name string, value bool, usage string) *Fl
 // specified name, default value, and usage string. The argument p points to a
 // bool variable in which to store the value of the flag.
 func Bool(p *bool, name string, value bool, usage string) *Flag {
-	v := newBoolValue(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, boolDecoder{})
 	c.kind = ir.KindBool
 	return c
 }
@@ -132,9 +129,8 @@ func Bool(p *bool, name string, value bool, usage string) *Flag {
 // points to a time.Duration variable in which to store the value of the flag.
 // The flag accepts a value acceptable to time.ParseDuration.
 func Duration(p *time.Duration, name string, value time.Duration, usage string) *Flag {
-	v := newDurationValue(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[time.Duration](decodeDuration))
 	c.kind = ir.KindDuration
 	return c
 }
@@ -143,9 +139,8 @@ func Duration(p *time.Duration, name string, value time.Duration, usage string) 
 // with specified name, default value, and usage string. The argument p points
 // to a float64 variable in which to store the value of the flag.
 func Float64(p *float64, name string, value float64, usage string) *Flag {
-	v := newFloat64Value(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[float64](decodeFloat64))
 	c.kind = ir.KindFloat
 	return c
 }
@@ -157,7 +152,12 @@ func Float64(p *float64, name string, value float64, usage string) *Flag {
 // Flag.NArgs. Its Kind is ir.KindOpaque: fn may parse its argument as
 // anything, so the flag is not described as text the way String is.
 func Func(name, usage string, fn func(s string) error) *Flag {
-	c := Var(funcValue(fn), name, usage).NArgs(0, 0)
+	dec := DecodeFunc[bool](func(v *bool, s string) error {
+		*v = true
+		return fn(s)
+	})
+	c := Var(new(bool), name, usage, dec).NArgs(0, 0)
+	c.defValue = ""
 	c.kind = ir.KindOpaque
 	return c
 }
@@ -166,9 +166,8 @@ func Func(name, usage string, fn func(s string) error) *Flag {
 // specified name, default value, and usage string. The argument p points to an
 // int variable in which to store the value of the flag.
 func Int(p *int, name string, value int, usage string) *Flag {
-	v := newIntValue(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[int](decodeInt))
 	c.kind = ir.KindInt
 	return c
 }
@@ -177,9 +176,8 @@ func Int(p *int, name string, value int, usage string) *Flag {
 // specified name, default value, and usage string. The argument p points to an
 // int64 variable in which to store the value of the flag.
 func Int64(p *int64, name string, value int64, usage string) *Flag {
-	v := newInt64Value(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[int64](decodeInt64))
 	c.kind = ir.KindInt
 	return c
 }
@@ -188,9 +186,8 @@ func Int64(p *int64, name string, value int64, usage string) *Flag {
 // specified name, default value, and usage string. The argument p points to a
 // string variable in which to store the value of the flag.
 func String(p *string, name, value, usage string) *Flag {
-	v := newStringValue(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[string](decodeString))
 	c.kind = ir.KindString
 	return c
 }
@@ -199,9 +196,8 @@ func String(p *string, name, value, usage string) *Flag {
 // default value, and usage string. The argument p points to a string slice variable in which each
 // flag value will be stored in command line order.
 func Strings(p *[]string, name string, value []string, usage string) *Flag {
-	v := newStringSliceValue(value, p)
-	c := Var(v, name, usage).NArgs(0, 0)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[[]string](decodeStrings)).NArgs(0, 0)
 	c.kind = ir.KindString
 	return c
 }
@@ -210,9 +206,8 @@ func Strings(p *[]string, name string, value []string, usage string) *Flag {
 // specified name, default value, and usage string. The argument p points to an
 // uint variable in which to store the value of the flag.
 func Uint(p *uint, name string, value uint, usage string) *Flag {
-	v := newUintValue(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[uint](decodeUint))
 	c.kind = ir.KindUint
 	return c
 }
@@ -221,9 +216,8 @@ func Uint(p *uint, name string, value uint, usage string) *Flag {
 // with specified name, default value, and usage string. The argument p points
 // to an uint64 variable in which to store the value of the flag.
 func Uint64(p *uint64, name string, value uint64, usage string) *Flag {
-	v := newUint64Value(value, p)
-	c := Var(v, name, usage)
-	c.defValue = stringifyDefault(v)
+	*p = value
+	c := Var(p, name, usage, DecodeFunc[uint64](decodeUint64))
 	c.kind = ir.KindUint
 	return c
 }
@@ -652,12 +646,26 @@ func (c *FlagGroup) Flags(flags ...*Flag) *FlagGroup {
 func FromFlagSet(name, title string, fs *flag.FlagSet) *FlagGroup {
 	group := NewFlagGroup(name, title)
 	fs.VisitAll(func(f *flag.Flag) {
-		flg := Var(f.Value, f.Name, f.Usage)
-		flg.defValue = f.DefValue
-		flg.kind = kindFromFlagValue(f.Value)
-		group.Flags(flg.Persistent())
+		group.Flags(fromFlag(f).Persistent())
 	})
 	return group
+}
+
+// fromFlag returns the Flag for one imported from a flag.FlagSet. It is
+// the one way a flag.Value enters this package: the parser calls Set on
+// it directly, since it already speaks ir.Value, and its default is the
+// string the flag package rendered.
+func fromFlag(f *flag.Flag) *Flag {
+	return &Flag{
+		origin:   ir.NewOrigin(),
+		names:    []string{f.Name},
+		usage:    f.Usage,
+		defValue: f.DefValue,
+		minCount: defaultMinNArgs,
+		maxCount: defaultMaxNArgs,
+		value:    f.Value,
+		kind:     kindFromFlagValue(f.Value),
+	}
 }
 
 // kindFromFlagValue recovers the Kind of a value imported from a

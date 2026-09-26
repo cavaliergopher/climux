@@ -8,12 +8,15 @@ package ir
 // operand bound to a positional flag.
 //
 // This is Go's flag.Value without String, so a value already written for
-// the flag package satisfies it and may be bound with climux.Var
-// unchanged. String is not required because a compiled flag carries its
-// default already rendered, captured when the flag was constructed. The
-// likeness stops at the interface: command lines are POSIX/GNU and not
-// the flag package's dialect, so a program migrating keeps its values and
-// changes the arguments its users type.
+// the flag package satisfies it, which is how climux.FromFlagSet mounts
+// one unchanged. String is not required because a compiled flag carries
+// its default already rendered, captured when the flag was constructed.
+// The likeness stops at the interface: command lines are POSIX/GNU and
+// not the flag package's dialect, so a program migrating keeps its values
+// and changes the arguments its users type.
+//
+// A program declaring its own flags never implements this; it writes a
+// climux.Decoder, and the root package adapts one to it.
 type Value interface {
 	Set(s string) error
 }
@@ -47,17 +50,18 @@ const (
 	KindFloat    Kind = "float"
 	KindDuration Kind = "duration"
 
-	// KindOpaque is every value with no narrower kind to report: one bound
-	// with Var whose type does not implement KindValue.
+	// KindOpaque is every value with no narrower kind to report: one
+	// whose decoder, or imported Value, does not say.
 	KindOpaque Kind = "opaque"
 )
 
 // KindValue is an optional interface for a Value that reports what Kind
 // it is, in the manner BoolValue reports IsBoolFlag.
 //
-// A value bound with Var compiles to KindOpaque unless it implements
-// this, which lets a custom Value describe what it accepts as precisely
-// as one of the typed constructors, such as String or Int, already does.
+// A value compiles to KindOpaque unless it implements this, which lets
+// one describe what it accepts as precisely as a typed constructor, such
+// as String or Int, already does. A climux.Decoder says the same thing
+// with a Kind method of its own.
 type KindValue interface {
 	Value
 	Kind() Kind

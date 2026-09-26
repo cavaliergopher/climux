@@ -1,12 +1,81 @@
 package climux
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
 	"go.hotsrc.dev/climux/ir"
 )
+
+// Decoder turns one option-argument into a T, written over what earlier
+// namings of the same flag left in value. On the flag's first naming
+// *value is the zero T, because a flag's first naming replaces its
+// default: a scalar overwrites, and a slice or map initialises there.
+//
+// It is what Var takes, and the one thing this package asks an author
+// to write for a type it has no constructor for:
+//
+//	type ipDecoder struct{}
+//
+//	func (ipDecoder) Decode(v *net.IP, s string) error {
+//		ip := net.ParseIP(s)
+//		if ip == nil {
+//			return fmt.Errorf("invalid IP: %s", s)
+//		}
+//		*v = ip
+//		return nil
+//	}
+//
+// A Decoder may add two optional methods, named as Go's flag package
+// names them. Kind() ir.Kind says what kind of value it decodes, which
+// is otherwise ir.KindOpaque. IsBoolFlag() bool, reporting true, lets the
+// flag stand alone on the command line the way a boolean does.
+type Decoder[T any] interface {
+	Decode(value *T, s string) error
+}
+
+// DecodeFunc adapts a function to Decoder, as http.HandlerFunc adapts one
+// to http.Handler.
+type DecodeFunc[T any] func(value *T, s string) error
+
+// Decode calls f.
+func (f DecodeFunc[T]) Decode(value *T, s string) error { return f(value, s) }
+
+// value adapts a Decoder and the variable it writes to ir.Value, which
+// is what the parser calls.
+type value[T any] struct {
+	p   *T
+	dec Decoder[T]
+
+	// named records that the flag has been named once, so that the
+	// first naming finds the zero T rather than the default.
+	named bool
+}
+
+// Set zeroes the variable on the flag's first naming and decodes s into
+// it.
+func (v *value[T]) Set(s string) error {
+	if !v.named {
+		var zero T
+		*v.p = zero
+		v.named = true
+	}
+	return v.dec.Decode(v.p, s)
+}
+
+// Kind and IsBoolFlag answer for the decoder, which may or may not have
+// an opinion. See Decoder.
+func (v *value[T]) Kind() ir.Kind {
+	if k, ok := v.dec.(interface{ Kind() ir.Kind }); ok {
+		return k.Kind()
+	}
+	return ir.KindOpaque
+}
+
+func (v *value[T]) IsBoolFlag() bool {
+	b, ok := v.dec.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
+}
 
 // isBoolValue reports whether v declares itself a boolean flag by
 // implementing ir.BoolValue, which is what lets it stand alone on the
@@ -27,231 +96,81 @@ func kindOf(v ir.Value) ir.Kind {
 	return ir.KindOpaque
 }
 
-type bitFieldValue struct {
-	p    *uint64
+// boolDecoder decodes a bool and lets its flag stand alone.
+type boolDecoder struct{}
+
+func (boolDecoder) IsBoolFlag() bool { return true }
+
+func (boolDecoder) Decode(v *bool, s string) error {
+	b, err := strconv.ParseBool(s)
+	*v = b
+	return err
+}
+
+// bitFieldDecoder decodes a bool and, when it is true, sets mask in the
+// word several flags share. Nothing clears a bit: a false leaves the
+// word alone.
+type bitFieldDecoder struct {
+	word *uint64
 	mask uint64
 }
 
-func newBitFieldValue(val bool, p *uint64, mask uint64) *bitFieldValue {
-	v := &bitFieldValue{p: p, mask: mask}
-	v.set(val)
-	return v
-}
+func (bitFieldDecoder) IsBoolFlag() bool { return true }
 
-func (p *bitFieldValue) IsBoolFlag() bool { return true }
-
-func (p *bitFieldValue) String() string { return fmt.Sprintf("0x%0x", *p.p) }
-
-func (p *bitFieldValue) Get() any { return *p.p }
-
-func (p *bitFieldValue) Set(s string) error {
-	v, err := strconv.ParseBool(s)
+func (d bitFieldDecoder) Decode(v *bool, s string) error {
+	b, err := strconv.ParseBool(s)
 	if err != nil {
 		return err
 	}
-	p.set(v)
-	return nil
-}
-
-func (p *bitFieldValue) set(v bool) {
-	if v {
-		*p.p |= p.mask
+	*v = b
+	if b {
+		*d.word |= d.mask
 	}
-}
-
-type boolValue bool
-
-func newBoolValue(val bool, p *bool) *boolValue {
-	*p = val
-	return (*boolValue)(p)
-}
-
-func (p *boolValue) IsBoolFlag() bool { return true }
-
-func (p *boolValue) String() string { return strconv.FormatBool((bool)(*p)) }
-
-func (p *boolValue) Get() any { return (bool)(*p) }
-
-func (p *boolValue) Set(s string) error {
-	v, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	*p = boolValue(v)
 	return nil
 }
 
-type durationValue time.Duration
-
-func newDurationValue(val time.Duration, p *time.Duration) *durationValue {
-	*p = val
-	return (*durationValue)(p)
+func decodeDuration(v *time.Duration, s string) error {
+	d, err := time.ParseDuration(s)
+	*v = d
+	return err
 }
 
-func (p *durationValue) String() string { return (time.Duration)(*p).String() }
+func decodeFloat64(v *float64, s string) error {
+	f, err := strconv.ParseFloat(s, 64)
+	*v = f
+	return err
+}
 
-func (p *durationValue) Get() any { return (time.Duration)(*p) }
+func decodeInt(v *int, s string) error {
+	n, err := strconv.ParseInt(s, 10, 64)
+	*v = int(n)
+	return err
+}
 
-func (p *durationValue) Set(s string) error {
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-	*p = durationValue(v)
+func decodeInt64(v *int64, s string) error {
+	n, err := strconv.ParseInt(s, 10, 64)
+	*v = n
+	return err
+}
+
+func decodeString(v *string, s string) error {
+	*v = s
 	return nil
 }
 
-type float64Value float64
-
-func newFloat64Value(val float64, p *float64) *float64Value {
-	*p = val
-	return (*float64Value)(p)
-}
-
-func (p *float64Value) String() string {
-	return strconv.FormatFloat((float64)(*p), 'e', -1, 64)
-}
-
-func (p *float64Value) Get() any { return (float64)(*p) }
-
-func (p *float64Value) Set(s string) error {
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return err
-	}
-	*p = float64Value(v)
+func decodeStrings(v *[]string, s string) error {
+	*v = append(*v, s)
 	return nil
 }
 
-type funcValue func(string) error
-
-func (f funcValue) Set(s string) error { return f(s) }
-
-type intValue int
-
-func newIntValue(val int, p *int) *intValue {
-	*p = val
-	return (*intValue)(p)
+func decodeUint(v *uint, s string) error {
+	n, err := strconv.ParseUint(s, 10, 64)
+	*v = uint(n)
+	return err
 }
 
-func (p *intValue) String() string {
-	return strconv.FormatInt((int64)(*p), 10)
-}
-
-func (p *intValue) Get() any { return (int64)(*p) }
-
-func (p *intValue) Set(s string) error {
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*p = intValue(v)
-	return nil
-}
-
-type int64Value int64
-
-func newInt64Value(val int64, p *int64) *int64Value {
-	*p = val
-	return (*int64Value)(p)
-}
-
-func (p *int64Value) String() string {
-	return strconv.FormatInt((int64)(*p), 10)
-}
-
-func (p *int64Value) Get() any { return (int64)(*p) }
-
-func (p *int64Value) Set(s string) error {
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*p = int64Value(v)
-	return nil
-}
-
-type stringValue string
-
-func newStringValue(val string, p *string) *stringValue {
-	*p = val
-	return (*stringValue)(p)
-}
-
-func (p *stringValue) String() string { return (string)(*p) }
-
-func (p *stringValue) Get() any { return (string)(*p) }
-
-func (p *stringValue) Set(s string) error {
-	*p = stringValue(s)
-	return nil
-}
-
-type stringSliceValue struct {
-	p   *[]string
-	hot bool
-}
-
-func newStringSliceValue(val []string, p *[]string) *stringSliceValue {
-	*p = val
-	return &stringSliceValue{p: p}
-}
-
-func (p *stringSliceValue) String() string {
-	return fmt.Sprintf("%v", *p.p)
-}
-
-func (p *stringSliceValue) Get() any { return *p.p }
-
-func (p *stringSliceValue) Set(s string) error {
-	if !p.hot {
-		*p.p = make([]string, 0, 1)
-		p.hot = true
-	}
-	*p.p = append(*p.p, s)
-	return nil
-}
-
-type uintValue uint
-
-func newUintValue(val uint, p *uint) *uintValue {
-	*p = val
-	return (*uintValue)(p)
-}
-
-func (p *uintValue) String() string {
-	return strconv.FormatInt((int64)(*p), 10)
-}
-
-func (p *uintValue) Get() any { return (int64)(*p) }
-
-func (p *uintValue) Set(s string) error {
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*p = uintValue(v)
-	return nil
-}
-
-type uint64Value uint64
-
-func newUint64Value(val uint64, p *uint64) *uint64Value {
-	*p = val
-	return (*uint64Value)(p)
-}
-
-func (p *uint64Value) String() string {
-	return strconv.FormatInt((int64)(*p), 10)
-}
-
-func (p *uint64Value) Get() any { return (int64)(*p) }
-
-func (p *uint64Value) Set(s string) error {
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*p = uint64Value(v)
-	return nil
+func decodeUint64(v *uint64, s string) error {
+	n, err := strconv.ParseUint(s, 10, 64)
+	*v = n
+	return err
 }

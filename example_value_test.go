@@ -6,15 +6,15 @@ import (
 	"net"
 )
 
-// ipValue implements the Value interface for net.IP.
-type ipValue net.IP
+// ipDecoder decodes a net.IP.
+type ipDecoder struct{}
 
-func (p *ipValue) Set(s string) error {
+func (ipDecoder) Decode(v *net.IP, s string) error {
 	ip := net.ParseIP(s)
 	if ip == nil {
 		return fmt.Errorf("invalid IP: %s", s)
 	}
-	*p = ipValue(ip)
+	*v = ip
 	return nil
 }
 
@@ -23,15 +23,15 @@ func (p *ipValue) Set(s string) error {
 // net.IP variable in which to store the value of the flag.
 func IPVar(p *net.IP, name string, value net.IP, usage string) *Flag {
 	*p = value
-	return Var((*ipValue)(p), name, usage)
+	return Var(p, name, usage, ipDecoder{})
 }
 
-func ExampleValue() {
+func ExampleDecoder() {
 	var ip net.IP
 
 	cmd := NewCommand("ping", "").
 		Flags(
-			// configure a net.IP flag with our custom Value type
+			// configure a net.IP flag with our custom Decoder
 			IPVar(&ip, "ip", net.IPv6zero, "IP address to ping"),
 		).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {

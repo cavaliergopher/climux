@@ -101,8 +101,8 @@ you need to create a standard program.** A program that declares
 commands and flags, writes handlers and calls `Run` never imports `ir`.
 `Invocation` and `HandlerFunc` are therefore aliased into the root
 package, since they appear in the signature of every handler. Everything
-else an advanced consumer reaches for -- `ir.Command`, `ir.Value` for a
-custom flag type, `ir.CompleteFunc`, `ir.UsageFunc`, the error types --
+else an advanced consumer reaches for -- `ir.Command`, `ir.CompleteFunc`,
+`ir.UsageFunc`, the error types --
 is reached through the import, which keeps the root package's
 documentation to the surface a standard program uses.
 

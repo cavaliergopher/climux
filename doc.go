@@ -43,10 +43,10 @@ You can bind a flag to a variable using the Var functions.
 			),
 		)
 
-Or you can create custom flags that satisfy the ir.Value interface (with pointer receivers) and
-couple them to a flag parsing by
+Or you can bind a variable of any type by writing a Decoder for it and
+coupling the two with Var:
 
-	climux.Var(&flagVal, "name", "help message for flagname")
+	climux.Var(&flagVal, "name", "help message for flagname", myDecoder{})
 
 For such flags, the default value is just the initial value of the variable.
 
