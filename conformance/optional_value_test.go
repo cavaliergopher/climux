@@ -23,8 +23,12 @@ var optionalValue = Feature{
 					"ARGS":    arg([]string{"client"}),
 				},
 			},
-			// The nearest declaration today is a flag that requires its
-			// value, so it takes client.
+			// String requires a value, so it takes client. Bool leaves
+			// client alone but rejects --dry-run=client and =server. A
+			// custom VarType reporting IsBoolFlag gets all three right,
+			// but sees a bare --dry-run as "true", the same as a typed
+			// --dry-run=true. To solve: a flag whose bare form takes a
+			// declared value that no typed value can collide with.
 			Defect: &Outcome{
 				Cmd: "kubectl run",
 				Flags: Flags{

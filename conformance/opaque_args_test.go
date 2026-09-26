@@ -119,7 +119,9 @@ var opaqueArgs = Feature{
 			State:  KnownBad,
 			Source: "kubernetes/kubectl@v1.34 pkg/cmd/exec/exec.go",
 			Spec:   Outcome{Err: &Failure{}},
-			// climux cannot require a -- before a positional.
+			// COMMAND binds ls as an ordinary operand. To solve: a
+			// positional that only binds after --, so a line reaching
+			// it without one is rejected.
 			Defect: &Outcome{
 				Cmd: "kubectl exec",
 				Flags: Flags{

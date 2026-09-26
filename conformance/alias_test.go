@@ -40,8 +40,9 @@ var alias = Feature{
 					"ARGS":    arg([]string{"--foo"}),
 				},
 			},
-			// climux has no command alias; r is a copy of run, so it
-			// reaches a command of its own.
+			// r is declared as a copy of run, so the line reaches a
+			// command of its own. To solve: a second name for a
+			// command, reaching the same command as its first.
 			Defect: &Outcome{
 				Cmd: "cargo r",
 				Flags: Flags{
