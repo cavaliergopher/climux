@@ -3,7 +3,6 @@ package ir
 import (
 	"maps"
 	"slices"
-	"sync/atomic"
 
 	"go.hotsrc.dev/climux/desc"
 )
@@ -27,29 +26,44 @@ type Claim struct {
 	Effect string
 }
 
-// An Origin identifies the declaration a compiled flag was lowered from.
-// It is minted where a flag is declared and copied onto every compiled
-// flag lowered from it, so every flag any number of compiles of one
-// declaration produce shares one Origin, and no two declarations ever
-// share one. The zero Origin belongs to no declaration, and is what a
-// flag assembled by hand rather than lowered from one carries.
+// FlagState is what one reading of one command line made of a flag: how
+// its value was arrived at, how many times the line named it, and a way
+// to read the value back untyped.
 //
-// This package mints none and reads none. It carries the identity so
-// that a program holding a declaration can find what that declaration
-// compiled to in a tree it did not build; see Invocation.Resolve.
-// Nothing here can name the declaration itself, since the configuration
-// types that declare flags live in the package that imports this one.
-type Origin uint64
+// It belongs to the declaration and is allocated there, so every node
+// lowered from one declaration points at one of these. That is what lets
+// a tree be compiled more than once without the compiles disagreeing,
+// and what lets a declaration mounted at two depths of one path count as
+// one flag: a compiled node points at runtime state rather than holding
+// it.
+//
+// The parser writes Source and Count; it does not go through Value.Set,
+// which never runs for a flag binding no value and cannot tell argv from
+// the environment even when it does. Get and SetDefault are closures the
+// declaration supplies, because the value is typed in a package this one
+// cannot name. An author holding the declaration reads the typed value
+// from their own climux.FlagState and never comes here.
+type FlagState struct {
+	Source Source
+	Count  int
 
-// lastOrigin is the last identity NewOrigin handed out. It counts
-// declarations rather than describing any one tree, which is why a
-// package modeling what a program means keeps a counter at all.
-var lastOrigin atomic.Uint64
+	// Get returns the bound value, untyped, and is nil for a flag whose
+	// declaration offered no way to read one.
+	Get func() any
 
-// NewOrigin returns an Origin distinct from every other, to stamp on a
-// flag declaration. climux's flag constructors call it; nothing reading a
-// compiled tree needs to.
-func NewOrigin() Origin { return Origin(lastOrigin.Add(1)) }
+	// SetDefault writes the flag's declared default into its variable.
+	// The parser calls it after it has applied argv and the environment,
+	// for a flag neither of them named, so a variable is written once per
+	// reading or not at all. Nil for a flag declaring no default.
+	SetDefault func()
+}
+
+// Reset forgets the previous reading, so that the next is again the
+// first. It writes no variable.
+func (s *FlagState) Reset() {
+	s.Source = SourceDefault
+	s.Count = 0
+}
 
 // Flag is the compiled, implementation form of a command line flag or
 // positional argument, produced by lowering a configuration tree with
@@ -166,23 +180,12 @@ type Flag struct {
 	// climux.Complete.
 	CompleteFunc CompleteFunc
 
-	// Origin identifies the declaration this flag was lowered from, and
-	// is zero for a flag built by hand rather than lowered from one. It is
-	// written once, while lowering, and never afterwards: it says where
-	// the flag came from, not what has been done to it. See Origin.
-	Origin Origin
-
-	// Reset forgets the previous reading of the flag, so that the next
-	// time the line names it is again the first, and writes nothing.
-	// SetDefault writes the flag's default into its variable if the
-	// reading never named it. The parser calls Reset for every flag in
-	// the tree before it applies argv and SetDefault for every flag
-	// afterwards, so a variable is written once per reading, or not at
-	// all. Whether the flag was named is the flag's own to know, since
-	// one declaration may compile to several nodes that share a
-	// variable. Either is nil for a flag with nothing to do.
-	Reset      func()
-	SetDefault func()
+	// State is the runtime state of the declaration this flag was lowered
+	// from, shared by every node lowered from it, and nil for a flag built
+	// by hand rather than lowered from one. The parser writes through it,
+	// and a walker that has only the compiled tree reads through it. See
+	// FlagState.
+	State *FlagState
 
 	// Handler, if set, makes the flag an interrupt: naming it on the
 	// command line runs this in place of the handler of the command it was

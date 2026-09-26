@@ -23,8 +23,8 @@ type logSettings struct {
 func (s *logSettings) FlagGroup() *FlagGroup {
 	return NewFlagGroup(
 		"logging", "Logging options",
-		String(&s.Level, "log-level", "Set log verbosity").Default("info"),
-		String(&s.Format, "log-format", "Log output format").Default("text"),
+		String("log-level", "Set log verbosity").Default("info").Bind(&s.Level),
+		String("log-format", "Log output format").Default("text").Bind(&s.Format),
 	)
 }
 

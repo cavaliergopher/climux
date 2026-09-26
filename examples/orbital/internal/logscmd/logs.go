@@ -18,34 +18,32 @@ import (
 
 // Command returns the "logs" command.
 func Command(client *fleet.Client) *climux.Command {
-	var (
-		services []string
-		follow   bool
-		since    time.Duration
-	)
+	services := climux.Strings("SERVICE", "Services to tail").
+		Positional().
+		NArgs(1, 0).
+		Complete(func(inv *climux.Invocation, word string) ([]string, ir.CompDirective) {
+			return client.Services(), ir.CompNoFileComp
+		}).
+		State()
+	follow := climux.Bool("follow", "Keep streaming until interrupted").
+		Aliases("f").
+		State()
+	since := climux.Duration("since", "How far back to start showing logs").
+		Default(10 * time.Minute).
+		ShowDefault().
+		State()
 	return climux.NewCommand("logs", "Print recent log lines for one or more services").
-		Flags(
-			climux.Strings(&services, "SERVICE", "Services to tail").
-				Positional().
-				NArgs(1, 0).
-				Complete(func(inv *climux.Invocation, word string) ([]string, ir.CompDirective) {
-					return client.Services(), ir.CompNoFileComp
-				}),
-			climux.Bool(&follow, "follow", "Keep streaming until interrupted").
-				Aliases("f"),
-			climux.Duration(&since, "since", "How far back to start showing logs").Default(10*time.Minute).
-				ShowDefault(),
-		).
+		Flags(services, follow, since).
 		HandleFunc(func(ctx context.Context, inv *climux.Invocation) error {
-			for _, svc := range services {
+			for _, svc := range services.Value() {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
 				}
-				fmt.Fprintf(inv.Stdout, "%s: showing log lines from the last %s\n", svc, since)
+				fmt.Fprintf(inv.Stdout, "%s: showing log lines from the last %s\n", svc, since.Value())
 			}
-			if follow {
+			if follow.Value() {
 				// A real implementation would loop here, selecting on
 				// ctx.Done() against the interrupt NotifyContext installs,
 				// rather than returning once the backlog is printed.

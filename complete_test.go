@@ -15,17 +15,17 @@ import (
 // persistent, so descent drops the root's other flags.
 func compRootTree() *Command {
 	add := NewCommand("add", "").Flags(
-		String(new(string), "tags", "").Aliases("t"),
+		String("tags", "").Aliases("t"),
 	)
 	hiddenSub := NewCommand("hidden-sub", "").Hidden()
 	return NewCommand("app", "").
 		HelpFlag().
 		Flags(
-			Bool(new(bool), "verbose", "").Aliases("v").Persistent(),
-			Bool(new(bool), "extra", "").Aliases("x").Hidden(),
-			String(new(string), "env", "").Aliases("e").
+			Bool("verbose", "").Aliases("v").Persistent(),
+			Bool("extra", "").Aliases("x").Hidden(),
+			String("env", "").Aliases("e").
 				Choices("dev", "staging", "prod"),
-			String(new(string), "name", "").Aliases("n"),
+			String("name", "").Aliases("n"),
 		).
 		Subcommands(add, hiddenSub)
 }
@@ -36,9 +36,9 @@ func compRootTree() *Command {
 // can tell which slot answered.
 func compPosSlotsTree() *Command {
 	return NewCommand("app", "").Flags(
-		Strings(new([]string), "baz", "").Positional().NArgs(2, 2).
+		Strings("baz", "").Positional().NArgs(2, 2).
 			Choices("b1", "b2"),
-		Strings(new([]string), "qux", "").Positional().NArgs(0, 0).
+		Strings("qux", "").Positional().NArgs(0, 0).
 			Choices("q1", "q2"),
 	)
 }
@@ -48,7 +48,7 @@ func compPosSlotsTree() *Command {
 // "--" was read as a flag prefix or as an ordinary operand.
 func compOptionsEndedTree() *Command {
 	return NewCommand("app", "").Flags(
-		String(new(string), "file", "").Positional().
+		String("file", "").Positional().
 			Choices("-rf", "normal"),
 	)
 }
@@ -160,7 +160,7 @@ func TestComplete(t *testing.T) {
 // back to filename completion.
 func TestCompleteEmptyArgs(t *testing.T) {
 	cmd := NewCommand("app", "").Flags(
-		Bool(new(bool), "verbose", "").Aliases("v"),
+		Bool("verbose", "").Aliases("v"),
 	)
 	cands, dir := Complete(cmd, nil, "")
 	assertStrings(t, nil, cands)
@@ -183,8 +183,8 @@ func TestCompleteFuncSeesEarlierFlag(t *testing.T) {
 		return []string{"i-2", "i-1"}, ir.CompNoFileComp
 	}
 	cmd := NewCommand("app", "").Flags(
-		String(&region, "region", "").Aliases("r"),
-		String(new(string), "instance", "").Positional().Complete(fn),
+		String("region", "").Bind(&region).Aliases("r"),
+		String("instance", "").Positional().Complete(fn),
 	)
 
 	cands, dir := Complete(cmd, []string{"--region", "us-east"}, "i-")
@@ -210,11 +210,12 @@ func TestCompleteFuncSeesEarlierFlag(t *testing.T) {
 func TestCompleteSource(t *testing.T) {
 	t.Setenv("APP_REPO", "from-env")
 	var seen Source
+	repo := String("repo", "").Env("APP_REPO").State()
 	cmd := NewCommand("app", "").Flags(
-		String(new(string), "repo", "").Env("APP_REPO"),
-		String(new(string), "branch", "").
+		repo,
+		String("branch", "").
 			Complete(func(inv *ir.Invocation, word string) ([]string, ir.CompDirective) {
-				seen = inv.Source("repo")
+				seen = repo.Source()
 				return []string{"main"}, ir.CompNoFileComp
 			}),
 	)

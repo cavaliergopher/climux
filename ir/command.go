@@ -25,21 +25,6 @@ type Invocation struct {
 	// the flag is the one asking for it. See Flag.Handler.
 	Interrupt *Flag
 
-	// Sources records where the value each flag holds came from, for
-	// every flag the command line or the environment set. A flag neither
-	// of them set is absent, still holding what its constructor gave it,
-	// which is what SourceDefault -- the zero value a missing key reads
-	// as -- says of it.
-	//
-	// It is keyed by compiled flag rather than by name, because a name
-	// is unique only along one path; Source and IsSet answer by name,
-	// resolving it against the commands in scope first. It is never nil.
-	//
-	// An interrupt is recorded as SourceArgs even though it binds no
-	// value, because the command line named it and asking whether it was
-	// given is the one question worth answering about it. See Interrupt.
-	Sources map[*Flag]Source
-
 	// Stdin, Stdout and Stderr are the streams the handler should use in
 	// place of the process streams, so that a caller redirecting a
 	// command captures its output. They are the process streams unless
@@ -51,99 +36,25 @@ type Invocation struct {
 	Stderr io.Writer
 }
 
-// Lookup returns the flag named name that is in scope for the
-// invocation -- one Cmd or an ancestor of Cmd declared -- or nil when no
-// command on that path declares one. name is a flag's declared name,
-// undecorated by any dialect: "force" rather than "--force".
-//
-// A descendant may reuse the name of an ancestor's local flag, and then
-// the nearest declaration is the one found, starting from Cmd; see
-// docs/adr/flags-are-local-by-default.md. A program holding the
-// declaration itself should ask Resolve instead, which cannot confuse two
-// flags of the same name.
-func (inv *Invocation) Lookup(name string) *Flag {
-	return inv.find(func(f *Flag) bool { return f.Name == name })
-}
-
-// Resolve returns the flag in scope for the invocation that was lowered
-// from the declaration o identifies, or nil when no command on the path
-// declared it -- which is the answer for a flag that exists in another
-// subtree, and for the zero Origin. See Origin.
-func (inv *Invocation) Resolve(o Origin) *Flag {
-	if o == 0 {
-		return nil
-	}
-	return inv.find(func(f *Flag) bool { return f.Origin == o })
-}
-
-// find returns the first flag in scope for the invocation that match
-// accepts, or nil. Scope is every command from Cmd up to the root of the
-// tree, in that order, so a nearer declaration is found before a farther
-// one, and each command's flag groups in the order it carries them.
-//
-// Scope here is every flag a handler may read, which is wider than what
-// the command line may write at Cmd: an ancestor's local flag was written
-// before the line dispatched, and its value still stands.
-func (inv *Invocation) find(match func(*Flag) bool) *Flag {
-	for _, cmd := range slices.Backward(inv.Cmd.Ancestry) {
-		for _, group := range cmd.FlagGroups {
-			for _, f := range group.Flags {
-				if match(f) {
-					return f
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// Source reports where the value the flag named name holds came from:
-// SourceArgs if the command line set it, SourceEnv if the flag's
-// environment variable did, and SourceDefault if neither did and it
-// still holds what it was constructed with.
-//
-// A name no command in scope declares reports SourceDefault as well,
-// since nothing set such a flag here either. Lookup is what tells the
-// two apart, and a program asking about a flag it declared itself never
-// has to.
-func (inv *Invocation) Source(name string) Source {
-	f := inv.Lookup(name)
-	if f == nil {
-		return SourceDefault
-	}
-	return inv.Sources[f]
-}
-
-// IsSet reports whether the command line or the environment set the flag
-// named name, rather than leaving it the default it was constructed
-// with. It is Source(name) != SourceDefault, and is what to ask when one
-// flag means something different for another having been given at all --
-// as distinct from that other flag's value, which the program reads from
-// the variable it bound.
-func (inv *Invocation) IsSet(name string) bool {
-	return inv.Source(name) != SourceDefault
-}
-
 // Source names where the value a flag holds came from, which is what
 // tells a value an operator typed from one the program supplied: a
 // command line that never mentions a flag leaves it holding its default,
 // and nothing about the value itself says so afterwards.
 //
-// A source belongs to one reading of one command line rather than to
-// anything the program declared, so it is recorded on the Invocation and
-// not on the Flag; see Invocation.Sources.
+// A source belongs to one reading of one command line, so it is recorded
+// in the FlagState the declaration owns and the compiled flag points at,
+// never on the Flag itself.
 type Source int
 
 const (
 	// SourceDefault is a flag that neither the command line nor the
-	// environment set, which holds whatever its constructor gave it. It
-	// is the zero value, so a flag missing from Invocation.Sources
-	// reports it.
+	// environment set, which holds its default. It is the zero value, so
+	// a flag nothing has read yet reports it.
 	SourceDefault Source = iota
 
 	// SourceEnv is a flag set from the environment variable it declared.
 	// That happens only where the command line did not set it; see
-	// climux.Flag.EnvVar.
+	// climux.FlagBuilder.Env.
 	SourceEnv
 
 	// SourceArgs is a flag the command line set, which is the source
@@ -260,8 +171,8 @@ type Command struct {
 // docs/adr/flags-are-local-by-default.md.
 //
 // A flag group mounted from a Registry at two depths of one path lowers
-// to a flag at each, sharing an Origin. Only the deepest is returned,
-// since it is the one the command line reaches here.
+// to a flag at each, sharing a State. Only the deepest is returned, since
+// it is the one the command line reaches here.
 func (c *Command) ScopedFlags() []*Flag {
 	var flags []*Flag
 	for _, cmd := range c.Ancestry {
@@ -273,15 +184,15 @@ func (c *Command) ScopedFlags() []*Flag {
 			}
 		}
 	}
-	// Walked from the deepest, so the flag kept for a shared Origin is the
+	// Walked from the deepest, so the flag kept for a shared State is the
 	// last one the loop above appended.
-	seen := make(map[Origin]bool)
+	seen := make(map[*FlagState]bool)
 	kept := flags[:0:0]
 	for _, f := range slices.Backward(flags) {
-		if f.Origin != 0 && seen[f.Origin] {
+		if f.State != nil && seen[f.State] {
 			continue
 		}
-		seen[f.Origin] = true
+		seen[f.State] = true
 		kept = append(kept, f)
 	}
 	slices.Reverse(kept)

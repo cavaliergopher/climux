@@ -87,25 +87,25 @@ func TestPosFlagOrdering(t *testing.T) {
 	}
 	successCases := []*Command{
 		getFixture(
-			String(&sink, "one", "").Positional(),
+			String("one", "").Bind(&sink).Positional(),
 		),
 		getFixture(
-			String(&sink, "one", "").Positional(),
-			String(&sink, "two", "").Positional(),
+			String("one", "").Bind(&sink).Positional(),
+			String("two", "").Bind(&sink).Positional(),
 		),
 		getFixture(
-			String(&sink, "one", "").Positional().NArgs(0, 1),
-			String(&sink, "two", "").Positional(),
+			String("one", "").Bind(&sink).Positional().NArgs(0, 1),
+			String("two", "").Bind(&sink).Positional(),
 		),
 		getFixture(
-			String(&sink, "one", "").Positional().NArgs(1, 1),
-			String(&sink, "two", "").Positional(),
+			String("one", "").Bind(&sink).Positional().NArgs(1, 1),
+			String("two", "").Bind(&sink).Positional(),
 		),
 		getFixture(
-			String(&sink, "one", "").Positional().NArgs(1, 1),
-			String(&sink, "two", "").Positional().NArgs(2, 2),
-			String(&sink, "three", "").Positional().NArgs(3, 3),
-			String(&sink, "four", "").Positional(),
+			String("one", "").Bind(&sink).Positional().NArgs(1, 1),
+			String("two", "").Bind(&sink).Positional().NArgs(2, 2),
+			String("three", "").Bind(&sink).Positional().NArgs(3, 3),
+			String("four", "").Bind(&sink).Positional(),
 		),
 	}
 	for i, cmd := range successCases {
@@ -117,12 +117,12 @@ func TestPosFlagOrdering(t *testing.T) {
 	}
 	errorCases := []*Command{
 		getFixture(
-			String(&sink, "one", "").Positional().NArgs(0, 0),
-			String(&sink, "two", "").Positional(),
+			String("one", "").Bind(&sink).Positional().NArgs(0, 0),
+			String("two", "").Bind(&sink).Positional(),
 		),
 		getFixture(
-			String(&sink, "one", "").Positional().NArgs(1, 0),
-			String(&sink, "two", "").Positional(),
+			String("one", "").Bind(&sink).Positional().NArgs(1, 0),
+			String("two", "").Bind(&sink).Positional(),
 		),
 	}
 	for i, cmd := range errorCases {
@@ -138,10 +138,10 @@ func TestPositionalFlags(t *testing.T) {
 	var foo, bar string
 	var baz, qux []string
 	cmd := NewCommand("test", "").Flags(
-		String(&foo, "foo", "").Positional().Required(),
-		String(&bar, "bar", "").Positional().Required(),
-		Strings(&baz, "baz", "").Positional().NArgs(2, 2),
-		Strings(&qux, "qux", "").Positional().NArgs(0, 0),
+		String("foo", "").Bind(&foo).Positional().Required(),
+		String("bar", "").Bind(&bar).Positional().Required(),
+		Strings("baz", "").Bind(&baz).Positional().NArgs(2, 2),
+		Strings("qux", "").Bind(&qux).Positional().NArgs(0, 0),
 	)
 	_, err := Parse(cmd, "one", "two", "three", "four", "five", "six")
 	if err != nil {
@@ -162,8 +162,8 @@ func TestFromFlagSet(t *testing.T) {
 	flagSet.BoolVar(&baz, "baz", false, "")
 	c := NewCommand("test", "").
 		Flags(
-			String(&bar, "bar", ""),
-			Bool(&qux, "qux", ""),
+			String("bar", "").Bind(&bar),
+			Bool("qux", "").Bind(&qux),
 		).
 		FlagGroups(FromFlagSet("native", "Native options", flagSet))
 	_, err := Parse(c, "--foo", "foo", "--bar", "bar", "--baz", "--qux")
@@ -363,21 +363,17 @@ func TestSubcommandCycleFromDescendant(t *testing.T) {
 }
 
 func ExampleCommand_FlagGroups() {
-	var n int
-	var rightToLeft bool
-	var endcoding string
-
 	cmd := NewCommand("helloworld", "").
 		HelpFlag().
 		// n flag defines how many times to print "Hello, World!".
-		Flags(Int(&n, "n", "Print n times").Default(1)).
+		Flags(Int("n", "Print n times").Default(1)).
 
 		// Mount a flag group for language-related flags.
 		FlagGroups(NewFlagGroup(
 			"language",
 			"Language options",
-			String(&endcoding, "encoding", "Text encoding").Default("utf-8"),
-			Bool(&rightToLeft, "rtl", "Print right-to-left"),
+			String("encoding", "Text encoding").Default("utf-8"),
+			Bool("rtl", "Print right-to-left"),
 		))
 
 	// Print the help page
@@ -433,27 +429,28 @@ func ExampleFromFlagSet() {
 }
 
 func ExampleCommand_Subcommands() {
-	var n int
+	// a persistent "n" flag, declared once and read by both subcommands
+	n := Int("n", "Affect n widgets").Default(1).Persistent().State()
 
 	// configure a "create" subcommand
 	create := NewCommand("create", "Make new widgets").
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			fmt.Printf("Created %d widget(s)\n", n)
+			fmt.Printf("Created %d widget(s)\n", n.Value())
 			return nil
 		})
 
 	// configure a "destroy" subcommand
 	destroy := NewCommand("destroy", "Destroy widgets").
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			fmt.Printf("Destroyed %d widget(s)\n", n)
+			fmt.Printf("Destroyed %d widget(s)\n", n.Value())
 			return nil
 		})
 
-	// configure the main command with two subcommands and a persistent
-	// "n" flag, so it can be given after either of them.
+	// configure the main command with two subcommands and the persistent
+	// flag, so it can be given after either of them.
 	cmd := NewCommand("widgets", "").
 		HelpFlag().
-		Flags(Int(&n, "n", "Affect n widgets").Default(1).Persistent()).
+		Flags(n).
 		Subcommands(create, destroy)
 
 	ctx := context.Background()
@@ -483,7 +480,6 @@ func ExampleCommand_Subcommands() {
 }
 
 func ExampleCommand_Description() {
-	var n int
 	cmd := NewCommand("helloworld", "Say \"Hello, World!\"").
 		HelpFlag().
 		// Configure a description to print detailed information on the help
@@ -492,7 +488,7 @@ func ExampleCommand_Description() {
 			"This utility prints \"Hello, World!\" to the standard output.\n" +
 				"Print more than once with -n.",
 		).
-		Flags(Int(&n, "n", "Print n times").Default(1))
+		Flags(Int("n", "Print n times").Default(1))
 
 	// Print the help page
 	Run(context.Background(), cmd, WithArgs("--help"))
@@ -510,24 +506,22 @@ func ExampleCommand_Description() {
 }
 
 func ExampleFlagBuilder_EndOfOptions() {
-	var verbose bool
-	var args []string
+	verbose := Bool("v", "Print verbose output").State()
+	// once the first argument is taken, options have ended, so echo's own
+	// options reach it rather than echo_wrapper
+	args := Strings("arg", "Arguments to pass to echo").
+		Positional().
+		EndOfOptions().
+		State()
 
 	// create a command that hands its arguments to another program
 	cmd := NewCommand("echo_wrapper", "wraps the echo command").
-		Flags(
-			Bool(&verbose, "v", "Print verbose output"),
-			// once the first argument is taken, options have ended, so
-			// echo's own options reach it rather than echo_wrapper
-			Strings(&args, "arg", "Arguments to pass to echo").
-				Positional().
-				EndOfOptions(),
-		).
+		Flags(verbose, args).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			if verbose {
-				fmt.Printf("+ echo %s\n", strings.Join(args, " "))
+			if verbose.Value() {
+				fmt.Printf("+ echo %s\n", strings.Join(args.Value(), " "))
 			}
-			fmt.Println(strings.Join(args, " "))
+			fmt.Println(strings.Join(args.Value(), " "))
 			return nil
 		})
 
@@ -606,8 +600,8 @@ func TestCompileSubcommand(t *testing.T) {
 func TestCompileValidationError(t *testing.T) {
 	var a, b string
 	cmd := NewCommand("test", "").Flags(
-		String(&a, "foo", ""),
-		String(&b, "foo", ""),
+		String("foo", "").Bind(&a),
+		String("foo", "").Bind(&b),
 	)
 
 	_, compileErr := cmd.Compile()
@@ -630,7 +624,7 @@ func TestCompileValidationError(t *testing.T) {
 func TestCompileIsPure(t *testing.T) {
 	var s string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "").Default("default-value").NArgs(0, 1),
+		String("name", "").Bind(&s).Default("default-value").NArgs(0, 1),
 	)
 
 	if _, err := Parse(cmd, "--name=parsed-value"); err != nil {
@@ -672,16 +666,16 @@ func assertParseError(t *testing.T, cmd *Command, reason string) bool {
 func TestValidateDuplicateFlagName(t *testing.T) {
 	var a, b string
 	assertParseError(t, NewCommand("test", "").Flags(
-		String(&a, "foo", ""),
-		String(&b, "foo", ""),
+		String("foo", "").Bind(&a),
+		String("foo", "").Bind(&b),
 	), "duplicate flag name")
 }
 
 func TestValidateDuplicateShortName(t *testing.T) {
 	var a, b string
 	assertParseError(t, NewCommand("test", "").Flags(
-		String(&a, "x", ""),
-		String(&b, "x", ""),
+		String("x", "").Bind(&a),
+		String("x", "").Bind(&b),
 	), "duplicate short name")
 }
 
@@ -692,8 +686,8 @@ func TestValidateDuplicateShortName(t *testing.T) {
 func TestValidateDuplicatePositionalName(t *testing.T) {
 	var a, b string
 	_, err := Parse(NewCommand("test", "").Flags(
-		String(&a, "file", "").Positional(),
-		String(&b, "file", "").Positional(),
+		String("file", "").Bind(&a).Positional(),
+		String("file", "").Bind(&b).Positional(),
 	))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -709,8 +703,8 @@ func TestValidateDuplicatePositionalName(t *testing.T) {
 func TestConfigErrorNamesGrandchildByPath(t *testing.T) {
 	var a, b string
 	add := NewCommand("add", "").Flags(
-		String(&a, "name", ""),
-		String(&b, "name", ""),
+		String("name", "").Bind(&a),
+		String("name", "").Bind(&b),
 	)
 	remote := NewCommand("remote", "").Subcommands(add)
 	app := NewCommand("app", "").Subcommands(remote)
@@ -744,28 +738,28 @@ func TestValidateAncestorShadowing(t *testing.T) {
 		{
 			name: "LongName",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "force", "").Persistent()).
+				Flags(Bool("force", "").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
-					Bool(new(bool), "force", ""),
+					Bool("force", ""),
 				)),
 			want: `root sub: flag declared on both "root" and "sub": --force`,
 		},
 		{
 			name: "ShortName",
 			cmd: NewCommand("root", "").
-				Flags(String(new(string), "file", "").Aliases("f").Persistent()).
+				Flags(String("file", "").Aliases("f").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
-					String(new(string), "output", "").Aliases("f"),
+					String("output", "").Aliases("f"),
 				)),
 			want: `root sub: flag declared on both "root" and "sub": -f`,
 		},
 		{
 			name: "GrandparentClaim",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "force", "").Persistent()).
+				Flags(Bool("force", "").Persistent()).
 				Subcommands(NewCommand("mid", "").Subcommands(
 					NewCommand("leaf", "").Flags(
-						Bool(new(bool), "force", ""),
+						Bool("force", ""),
 					),
 				)),
 			want: `root mid leaf: flag declared on both "root" and "leaf": --force`,
@@ -789,10 +783,10 @@ func TestSiblingFlagReuse(t *testing.T) {
 	var deleteForce, pushForce bool
 	app := NewCommand("app", "").Subcommands(
 		NewCommand("delete", "").Flags(
-			Bool(&deleteForce, "force", "").Aliases("f"),
+			Bool("force", "").Bind(&deleteForce).Aliases("f"),
 		),
 		NewCommand("push", "").Flags(
-			Bool(&pushForce, "force", "").Aliases("f"),
+			Bool("force", "").Bind(&pushForce).Aliases("f"),
 		),
 	)
 
@@ -821,12 +815,12 @@ func TestSiblingFlagReuse(t *testing.T) {
 // remote's is persistent when persistent is set, and add's is omitted
 // then, since the name would collide.
 func newRemoteTree(remoteVerbose, addVerbose *bool, persistent bool) *Command {
-	verbose := Bool(remoteVerbose, "verbose", "")
+	verbose := Bool("verbose", "").Bind(remoteVerbose)
 	add := NewCommand("add", "")
 	if persistent {
 		verbose.Persistent()
 	} else {
-		add.Flags(Bool(addVerbose, "verbose", ""))
+		add.Flags(Bool("verbose", "").Bind(addVerbose))
 	}
 	return NewCommand("git", "").Subcommands(
 		NewCommand("remote", "").Flags(verbose).Subcommands(add),
@@ -854,23 +848,19 @@ func TestLocalFlagScope(t *testing.T) {
 
 	t.Run("ShadowedAfterDispatch", func(t *testing.T) {
 		var remoteVerbose, addVerbose bool
-		inv, err := Parse(newRemoteTree(&remoteVerbose, &addVerbose, false),
+		_, err := Parse(newRemoteTree(&remoteVerbose, &addVerbose, false),
 			"remote", "--verbose", "add", "--verbose")
 		if err != nil {
 			t.Fatal(err)
 		}
 		assertBool(t, true, remoteVerbose)
 		assertBool(t, true, addVerbose)
-		// The nearest declaration answers for a reused name.
-		if got, want := inv.Lookup("verbose").Origin, inv.Cmd.FlagGroups[0].Flags[0].Origin; got != want {
-			t.Errorf("Lookup found remote's --verbose, want add's")
-		}
 	})
 
 	t.Run("UnknownAfterDispatch", func(t *testing.T) {
 		tree := NewCommand("git", "").Subcommands(
 			NewCommand("remote", "").
-				Flags(Bool(new(bool), "verbose", "")).
+				Flags(Bool("verbose", "")).
 				Subcommands(NewCommand("add", "")),
 		)
 		_, err := Parse(tree, "remote", "add", "--verbose")
@@ -900,8 +890,8 @@ func TestLocalFlagScope(t *testing.T) {
 		var verbose bool
 		app := NewCommand("app", "").
 			Flags(
-				Strings(&files, "file", "").Positional(),
-				Bool(&verbose, "verbose", ""),
+				Strings("file", "").Bind(&files).Positional(),
+				Bool("verbose", "").Bind(&verbose),
 			).
 			Subcommands(NewCommand("run", ""))
 		inv, err := Parse(app, "x", "run", "--verbose")
@@ -921,7 +911,7 @@ func TestLocalFlagScope(t *testing.T) {
 // could write it.
 func TestPersistentPositional(t *testing.T) {
 	app := NewCommand("app", "").
-		Flags(String(new(string), "file", "").Positional().Persistent())
+		Flags(String("file", "").Positional().Persistent())
 	_, err := Parse(app)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -939,11 +929,11 @@ func TestHelpListsPersistentAncestorFlags(t *testing.T) {
 	app := NewCommand("app", "").
 		HelpFlag().
 		Flags(
-			Bool(new(bool), "local", "Only for app"),
-			Bool(new(bool), "global", "Everywhere").Persistent(),
+			Bool("local", "Only for app"),
+			Bool("global", "Everywhere").Persistent(),
 		).
 		Subcommands(NewCommand("sub", "").
-			Flags(Bool(new(bool), "own", "Only for sub")))
+			Flags(Bool("own", "Only for sub")))
 
 	code, stdout, stderr := runCaptured(app, "sub", "--help")
 	if code != 0 {
@@ -981,8 +971,8 @@ func TestFirstOperandDecides(t *testing.T) {
 	docker := func() *Command {
 		return NewCommand("docker", "").
 			Flags(
-				String(&plugin, "PLUGIN", "").Positional().EndOfOptions(),
-				Strings(&rest, "ARG", "").Positional(),
+				String("PLUGIN", "").Bind(&plugin).Positional().EndOfOptions(),
+				Strings("ARG", "").Bind(&rest).Positional(),
 			).
 			Subcommands(NewCommand("run", "").HandleFunc(tr.handler("run", nil))).
 			HandleFunc(tr.handler("docker", nil))
@@ -991,9 +981,9 @@ func TestFirstOperandDecides(t *testing.T) {
 	// chooses again after dispatch.
 	app := func() *Command {
 		return NewCommand("app", "").
-			Flags(String(&region, "REGION", "").Positional()).
+			Flags(String("REGION", "").Bind(&region).Positional()).
 			Subcommands(NewCommand("deploy", "").
-				Flags(String(&target, "TARGET", "").Positional()).
+				Flags(String("TARGET", "").Bind(&target).Positional()).
 				Subcommands(NewCommand("canary", "").HandleFunc(tr.handler("canary", nil))).
 				HandleFunc(tr.handler("deploy", nil))).
 			HandleFunc(tr.handler("app", nil))
@@ -1045,10 +1035,10 @@ func TestEndOfOptionsIsTheAuthorsTerminator(t *testing.T) {
 		verbose, image, command, args = false, "", "", nil
 		return NewCommand("run", "").
 			Flags(
-				Bool(&verbose, "verbose", "").Aliases("v"),
-				String(&image, "IMAGE", "").Positional().Required().EndOfOptions(),
-				String(&command, "COMMAND", "").Positional(),
-				Strings(&args, "ARG", "").Positional(),
+				Bool("verbose", "").Bind(&verbose).Aliases("v"),
+				String("IMAGE", "").Bind(&image).Positional().Required().EndOfOptions(),
+				String("COMMAND", "").Bind(&command).Positional(),
+				Strings("ARG", "").Bind(&args).Positional(),
 			).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
 	}
@@ -1098,19 +1088,20 @@ func TestUnbound(t *testing.T) {
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
 	}
 
-	inv, err := Parse(build(), "--dry-run")
-	if err != nil {
+	if _, err := Parse(build(), "--dry-run"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got, want := dryRun.IsSetIn(inv), true; got != want {
-		t.Errorf("IsSetIn = %v, want %v", got, want)
+	if got, want := dryRun.State().IsSet(), true; got != want {
+		t.Errorf("IsSet = %v, want %v", got, want)
 	}
-	inv, err = Parse(build())
-	if err != nil {
+	if got, want := dryRun.State().Value(), true; got != want {
+		t.Errorf("Value = %v, want %v", got, want)
+	}
+	if _, err := Parse(build()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got, want := dryRun.IsSetIn(inv), false; got != want {
-		t.Errorf("IsSetIn with nothing given = %v, want %v", got, want)
+	if got, want := dryRun.State().IsSet(), false; got != want {
+		t.Errorf("IsSet with nothing given = %v, want %v", got, want)
 	}
 
 	for _, tt := range []struct {
@@ -1148,10 +1139,10 @@ func TestEndOfOptionsOnAnOption(t *testing.T) {
 		verbose, exec, args = false, "", nil
 		return NewCommand("test", "").
 			Flags(
-				Bool(&verbose, "verbose", ""),
+				Bool("verbose", "").Bind(&verbose),
 				Unbound("end-of-options", "").EndOfOptions(),
-				String(&exec, "exec", "").EndOfOptions(),
-				Strings(&args, "ARG", "").Positional(),
+				String("exec", "").Bind(&exec).EndOfOptions(),
+				Strings("ARG", "").Bind(&args).Positional(),
 			).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
 	}
@@ -1183,8 +1174,8 @@ func TestEndOfOptionsOnAnOption(t *testing.T) {
 func TestValidatePositionalAfterUnbounded(t *testing.T) {
 	var a, b string
 	assertParseError(t, NewCommand("test", "").Flags(
-		String(&a, "one", "").Positional().NArgs(0, 0),
-		String(&b, "two", "").Positional(),
+		String("one", "").Bind(&a).Positional().NArgs(0, 0),
+		String("two", "").Bind(&b).Positional(),
 	), "positional after unbounded positional")
 }
 
@@ -1203,37 +1194,37 @@ func TestArgumentErrorNamesTheFlag(t *testing.T) {
 	}{
 		{
 			"MissingRequired",
-			String(new(string), "req", "").Required(),
+			String("req", "").Required(),
 			nil,
 			"missing required argument: --req",
 		},
 		{
 			"TooFewExactCount",
-			Strings(&[]string{}, "pair", "").NArgs(2, 2),
+			Strings("pair", "").Bind(&[]string{}).NArgs(2, 2),
 			[]string{"--pair", "a"},
 			"expected 2 arguments, got 1: --pair",
 		},
 		{
 			"TooFewAtLeast",
-			Strings(&[]string{}, "least", "").NArgs(2, 0),
+			Strings("least", "").Bind(&[]string{}).NArgs(2, 0),
 			[]string{"--least", "a"},
 			"expected at least 2 arguments, got 1: --least",
 		},
 		{
 			"TooManyOccurrences",
-			Strings(&[]string{}, "many", "").NArgs(0, 2),
+			Strings("many", "").Bind(&[]string{}).NArgs(0, 2),
 			[]string{"--many", "a", "--many", "b", "--many", "c"},
 			"argument specified too many times: --many",
 		},
 		{
 			"OptionNeedsValue",
-			String(new(string), "opt", ""),
+			String("opt", ""),
 			[]string{"--opt"},
 			"option requires an argument: --opt",
 		},
 		{
 			"UnrecognizedOption",
-			String(new(string), "opt", ""),
+			String("opt", ""),
 			[]string{"--nope"},
 			"unrecognized option: --nope",
 		},
@@ -1255,7 +1246,7 @@ func TestArgumentErrorNamesTheFlag(t *testing.T) {
 func TestArgumentErrorNamesPositional(t *testing.T) {
 	var files []string
 	cmd := NewCommand("test", "").Flags(
-		Strings(&files, "file", "").Positional().NArgs(1, 0),
+		Strings("file", "").Bind(&files).Positional().NArgs(1, 0),
 	)
 	_, err := Parse(cmd)
 	if err == nil {
@@ -1279,7 +1270,7 @@ func TestValidateInvalidNArgs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var a string
 			cmd := NewCommand("test", "").Flags(
-				String(&a, "foo", "").NArgs(tt.min, tt.max),
+				String("foo", "").Bind(&a).NArgs(tt.min, tt.max),
 			)
 			_, err := Parse(cmd)
 			if err == nil {
@@ -1298,7 +1289,7 @@ func TestValidateInvalidNArgs(t *testing.T) {
 func TestValidateUnboundedMaxIsNotExceeded(t *testing.T) {
 	var a []string
 	cmd := NewCommand("test", "").Flags(
-		Strings(&a, "foo", "").NArgs(1, 0),
+		Strings("foo", "").Bind(&a).NArgs(1, 0),
 	)
 	if _, err := Parse(cmd, "--foo", "x"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1318,7 +1309,7 @@ func TestValidateShortName(t *testing.T) {
 		t.Run(shortName, func(t *testing.T) {
 			var a string
 			assertParseError(t, NewCommand("test", "").Flags(
-				String(&a, "foo", "").Aliases(shortName),
+				String("foo", "").Bind(&a).Aliases(shortName),
 			), "illegal short name")
 		})
 	}
@@ -1326,7 +1317,7 @@ func TestValidateShortName(t *testing.T) {
 		t.Run(shortName, func(t *testing.T) {
 			var a string
 			cmd := NewCommand("test", "").Flags(
-				String(&a, "foo", "").Aliases(shortName),
+				String("foo", "").Bind(&a).Aliases(shortName),
 			)
 			if _, err := Parse(cmd); err != nil {
 				t.Errorf("expected %q to be a legal short name: %v", shortName, err)
@@ -1341,9 +1332,9 @@ func TestValidateShortName(t *testing.T) {
 func TestValidateCollectsAllErrors(t *testing.T) {
 	var a, b, c string
 	cmd := NewCommand("test", "").Flags(
-		String(&a, "foo", ""),
-		String(&b, "foo", ""),
-		String(&c, "bar", "").Aliases("!"), // illegal short name
+		String("foo", "").Bind(&a),
+		String("foo", "").Bind(&b),
+		String("bar", "").Bind(&c).Aliases("!"), // illegal short name
 	)
 	_, err := Parse(cmd)
 	if err == nil {
@@ -1378,8 +1369,8 @@ func TestValidateCollectsAllErrors(t *testing.T) {
 func TestConfigErrorReportsOnRunsStderr(t *testing.T) {
 	sub := NewCommand("sub", "").
 		Flags(
-			String(new(string), "foo", ""),
-			String(new(string), "foo", ""),
+			String("foo", ""),
+			String("foo", ""),
 		)
 	cmd := NewCommand("test", "").Subcommands(sub)
 
@@ -1399,7 +1390,7 @@ func TestConfigErrorReportsOnRunsStderr(t *testing.T) {
 // that tag must not leak into the sentence Run prints for a human.
 func TestArgumentErrorWrapsArgumentErrorOnce(t *testing.T) {
 	cmd := NewCommand("test", "").Flags(
-		String(new(string), "foo", "").Choices("a", "b"),
+		String("foo", "").Choices("a", "b"),
 	)
 	code, _, stderr := runCaptured(cmd, "--foo=c")
 	if got, want := code, 2; got != want {
@@ -1450,7 +1441,7 @@ func TestValidateFlagName(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var a string
-			cmd := NewCommand("test", "").Flags(String(&a, tt.name, ""))
+			cmd := NewCommand("test", "").Flags(String(tt.name, "").Bind(&a))
 			_, err := Parse(cmd)
 			if err == nil {
 				t.Fatalf("expected error for flag name %q, got nil", tt.name)
@@ -1463,7 +1454,7 @@ func TestValidateFlagName(t *testing.T) {
 	for _, name := range []string{"dry-run", "helper"} {
 		t.Run(name, func(t *testing.T) {
 			var a string
-			cmd := NewCommand("test", "").Flags(String(&a, name, ""))
+			cmd := NewCommand("test", "").Flags(String(name, "").Bind(&a))
 			if _, err := Parse(cmd); err != nil {
 				t.Errorf("expected %q to be a legal flag name: %v", name, err)
 			}
@@ -1484,17 +1475,17 @@ func TestHelpNamesCollideOnlyWhenMounted(t *testing.T) {
 	}{
 		{
 			"LongHelp",
-			String(&a, "help", ""),
+			String("help", "").Bind(&a),
 			"test: flag declared more than once: --help",
 		},
 		{
 			"ShortH",
-			String(&a, "foo", "").Aliases("h"),
+			String("foo", "").Bind(&a).Aliases("h"),
 			"test: flag declared more than once: -h",
 		},
 		{
 			"ShortOnlyH", // a one-character name is spelled with one dash
-			String(&a, "h", ""),
+			String("h", "").Bind(&a),
 			"test: flag declared more than once: -h",
 		},
 	} {
@@ -1521,8 +1512,8 @@ func TestHelpNamesCollideOnlyWhenMounted(t *testing.T) {
 		cmd := NewCommand("test", "").
 			HelpFlag().
 			Flags(
-				String(&a, "helper", "").Aliases("H"),
-				String(&b, "no-help", ""),
+				String("helper", "").Bind(&a).Aliases("H"),
+				String("no-help", "").Bind(&b),
 			)
 		if _, err := Parse(cmd); err != nil {
 			t.Errorf("expected nearby names to remain legal: %v", err)
@@ -1535,8 +1526,8 @@ func TestHelpNamesCollideOnlyWhenMounted(t *testing.T) {
 func TestValidateErrorsSurfaceAtParse(t *testing.T) {
 	var a, b string
 	cmd := NewCommand("test", "").Flags(
-		String(&a, "foo", ""),
-		String(&b, "foo", ""),
+		String("foo", "").Bind(&a),
+		String("foo", "").Bind(&b),
 	)
 	if cmd == nil {
 		t.Fatal("expected non-nil command from construction")
@@ -1550,8 +1541,8 @@ func TestValidateErrorsSurfaceAtParse(t *testing.T) {
 func TestValidateRunsOverSubcommands(t *testing.T) {
 	var a, b string
 	sub := NewCommand("sub", "").Flags(
-		String(&a, "foo", ""),
-		String(&b, "foo", ""),
+		String("foo", "").Bind(&a),
+		String("foo", "").Bind(&b),
 	)
 	root := NewCommand("root", "").Subcommands(sub)
 	assertParseError(t, root, "an invalid subcommand reached from the root")
@@ -1611,25 +1602,23 @@ func TestInvocationPath(t *testing.T) {
 	}
 }
 
-// TestParseIsNotWrittenBack asserts that a parse leaves nothing behind on
-// the command tree. Parsing one tree twice is what exposes a write-back,
-// so this does deliberately what a program must not.
-func TestParseIsNotWrittenBack(t *testing.T) {
-	cmd := NewCommand("test", "").
-		Flags(String(new(string), "name", ""))
-	first, err := Parse(cmd, "--name=one")
-	if err != nil {
+// TestParseForgetsThePreviousReading asserts that a second parse of one
+// tree starts from nothing named: what the first reading recorded is
+// gone, and the default lands again.
+func TestParseForgetsThePreviousReading(t *testing.T) {
+	name := String("name", "").Default("nobody").State()
+	cmd := NewCommand("test", "").Flags(name)
+	if _, err := Parse(cmd, "--name=one"); err != nil {
 		t.Fatal(err)
 	}
-	second, err := Parse(cmd)
-	if err != nil {
+	if got, want := name.Value(), "one"; got != want || !name.IsSet() {
+		t.Errorf("first parse: Value = %q, IsSet = %v", got, name.IsSet())
+	}
+	if _, err := Parse(cmd); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(first.Sources), 1; got != want {
-		t.Errorf("first parse sources = %d, want %d", got, want)
-	}
-	if got, want := len(second.Sources), 0; got != want {
-		t.Errorf("second parse sources = %d, want %d", got, want)
+	if got, want := name.Value(), "nobody"; got != want || name.IsSet() {
+		t.Errorf("second parse: Value = %q, IsSet = %v", got, name.IsSet())
 	}
 }
 
@@ -1689,8 +1678,8 @@ func TestRunExitCodes(t *testing.T) {
 			name: "ConfigError",
 			cmd: NewCommand("test", "").
 				Flags(
-					String(new(string), "foo", ""),
-					String(new(string), "foo", ""),
+					String("foo", ""),
+					String("foo", ""),
 				),
 			wantCode: 2,
 			wantErr:  "Program error: test: flag declared more than once: --foo\n",
@@ -1829,8 +1818,8 @@ func TestArgumentErrorsPrintUsage(t *testing.T) {
 	})
 	t.Run("ConfigError", func(t *testing.T) {
 		cmd := NewCommand("test", "").Flags(
-			String(new(string), "foo", ""),
-			String(new(string), "foo", ""),
+			String("foo", ""),
+			String("foo", ""),
 		)
 		code, _, stderr := runCaptured(cmd)
 		if got, want := code, 2; got != want {
@@ -1964,7 +1953,7 @@ func TestHandlerReceivesInvocation(t *testing.T) {
 	var got *Invocation
 	var remotes []string
 	add := NewCommand("add", "").
-		Flags(Strings(&remotes, "remote", "").Positional()).
+		Flags(Strings("remote", "").Bind(&remotes).Positional()).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			got = inv
 			return nil
@@ -2085,7 +2074,7 @@ func TestHelpFlagNames(t *testing.T) {
 		var host string
 		cmd := NewCommand("test", "").
 			HelpFlag("help").
-			Flags(String(&host, "host", "").Aliases("h"))
+			Flags(String("host", "").Bind(&host).Aliases("h"))
 
 		if _, err := Parse(cmd, "-h", "example.com"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -2113,7 +2102,7 @@ func TestHelpSkipsFlagRules(t *testing.T) {
 	var stdout strings.Builder
 	cmd := NewCommand("test", "").
 		HelpFlag().
-		Flags(String(new(string), "name", "").Required()).
+		Flags(String("name", "").Required()).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			t.Error("handler was called")
 			return nil
@@ -2211,7 +2200,7 @@ func ExampleInvocation() {
 func TestValidateDefaultNotAmongChoices(t *testing.T) {
 	var env string
 	cmd := NewCommand("test", "").Flags(
-		String(&env, "env", "").Default("bogus").Choices("staging", "production"),
+		String("env", "").Bind(&env).Default("bogus").Choices("staging", "production"),
 	)
 	_, err := Parse(cmd)
 	if err == nil {
@@ -2229,7 +2218,7 @@ func TestValidateDefaultNotAmongChoices(t *testing.T) {
 func TestValidateEmptyDefaultWithChoices(t *testing.T) {
 	var env string
 	cmd := NewCommand("test", "").Flags(
-		String(&env, "env", "").Choices("staging", "production").Required(),
+		String("env", "").Bind(&env).Choices("staging", "production").Required(),
 	)
 	if _, err := Parse(cmd, "--env=staging"); err != nil {
 		t.Fatal(err)
@@ -2244,7 +2233,7 @@ func TestValidateEmptyDefaultWithChoices(t *testing.T) {
 func TestValidateRepeatableDefaultWithChoices(t *testing.T) {
 	var tags []string
 	cmd := NewCommand("test", "").Flags(
-		Strings(&tags, "tag", "").Choices("red", "blue"),
+		Strings("tag", "").Bind(&tags).Choices("red", "blue"),
 	)
 	if _, err := Parse(cmd, "--tag=red", "--tag=blue"); err != nil {
 		t.Fatal(err)
@@ -2257,7 +2246,7 @@ func TestValidateRepeatableDefaultWithChoices(t *testing.T) {
 func TestValidatePositionalAlias(t *testing.T) {
 	var s string
 	_, err := Parse(NewCommand("test", "").Flags(
-		String(&s, "file", "").Aliases("f").Positional(),
+		String("file", "").Bind(&s).Aliases("f").Positional(),
 	))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -2273,7 +2262,7 @@ func TestValidatePositionalAlias(t *testing.T) {
 func TestValidateFlagWithoutName(t *testing.T) {
 	var s string
 	_, err := Parse(NewCommand("test", "").Flags(
-		String(&s, "", "").Aliases(""),
+		String("", "").Bind(&s).Aliases(""),
 	))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -2296,25 +2285,25 @@ func TestNegationCollision(t *testing.T) {
 		{
 			name: "GeneratedAgainstDeclared",
 			cmd: NewCommand("app", "").Flags(
-				Bool(new(bool), "cache", ""),
-				Bool(new(bool), "no-cache", ""),
+				Bool("cache", ""),
+				Bool("no-cache", ""),
 			),
 			want: "app: flag declared more than once: --no-cache (generated from --cache)",
 		},
 		{
 			name: "GeneratedAgainstDeclaredValueFlag",
 			cmd: NewCommand("app", "").Flags(
-				Bool(new(bool), "cache", ""),
-				String(new(string), "no-cache", ""),
+				Bool("cache", ""),
+				String("no-cache", ""),
 			),
 			want: "app: flag declared more than once: --no-cache (generated from --cache)",
 		},
 		{
 			name: "GeneratedAgainstAncestor",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "cache", "").Persistent()).
+				Flags(Bool("cache", "").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
-					Bool(new(bool), "no-cache", ""),
+					Bool("no-cache", ""),
 				)),
 			want: `root sub: flag declared on both "root" and "sub": --no-cache (generated from --cache)`,
 		},
@@ -2324,8 +2313,8 @@ func TestNegationCollision(t *testing.T) {
 			// once and by the name the author actually wrote.
 			name: "ShadowCollisionIsReportedOnce",
 			cmd: NewCommand("app", "").Flags(
-				Bool(new(bool), "force", "").Aliases("f"),
-				Bool(new(bool), "force", "").Aliases("g"),
+				Bool("force", "").Aliases("f"),
+				Bool("force", "").Aliases("g"),
 			),
 			want: "app: flag declared more than once: --force",
 		},
@@ -2350,8 +2339,8 @@ func TestNegationCollision(t *testing.T) {
 func TestOperandDoesNotCollideWithOption(t *testing.T) {
 	var operand, option string
 	_, err := Parse(NewCommand("test", "").Flags(
-		String(&operand, "service", "").Positional(),
-		String(&option, "service", ""),
+		String("service", "").Bind(&operand).Positional(),
+		String("service", "").Bind(&option),
 	), "web")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2368,8 +2357,8 @@ func TestOperandDoesNotCollideWithOption(t *testing.T) {
 func TestDuplicateValueNameCollides(t *testing.T) {
 	var a, b string
 	_, err := Parse(NewCommand("test", "").Flags(
-		String(&a, "src", "").Positional().ValueName("PATH"),
-		String(&b, "dst", "").Positional().ValueName("PATH"),
+		String("src", "").Bind(&a).Positional().ValueName("PATH"),
+		String("dst", "").Bind(&b).Positional().ValueName("PATH"),
 	))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -2542,7 +2531,7 @@ func TestRunCompilesOnce(t *testing.T) {
 func TestInterruptCommandRunsBare(t *testing.T) {
 	var wrapped, ran bool
 	root := NewCommand("test", "").
-		Flags(String(new(string), "name", "").Required()).
+		Flags(String("name", "").Required()).
 		Middleware(func(next HandlerFunc) HandlerFunc {
 			return func(ctx context.Context, inv *Invocation) error {
 				wrapped = true

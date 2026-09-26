@@ -5,29 +5,27 @@ import (
 	"fmt"
 )
 
-// ExampleSource shows a flag whose meaning depends on whether another
+// ExampleFlagState shows a flag whose meaning depends on whether another
 // flag was given at all: --template picks the output format, but only
-// where --output did not choose one. The bound variable cannot answer
-// that -- a defaulted --output and an --output typed with its default
-// value hold the same string -- so the invocation is asked instead.
-func ExampleSource() {
+// where --output did not choose one. The value cannot answer that -- a
+// defaulted --output and an --output typed with its default value hold
+// the same string -- so the flag's state is asked instead.
+func ExampleFlagState() {
 	// A tree reads one command line, so each line below builds its own;
 	// see docs/adr/a-tree-reads-one-command-line.md.
 	run := func(args ...string) {
-		var output, template string
-		outputFlag := String(&output, "output", "Output format").Default("table")
+		output := String("output", "Output format").Default("table").State()
+		template := String("template", "Go template").State()
 
 		cmd := NewCommand("get", "Display resources").
-			Flags(
-				outputFlag,
-				String(&template, "template", "Go template"),
-			).
+			Flags(output, template).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error {
-				if template != "" && !outputFlag.IsSetIn(inv) {
-					output = "go-template"
+				format := output.Value()
+				if template.Value() != "" && !output.IsSet() {
+					format = "go-template"
 				}
 				fmt.Fprintf(inv.Stdout, "output=%-12s --output was %s\n",
-					output, inv.Source("output"))
+					format, output.Source())
 				return nil
 			})
 

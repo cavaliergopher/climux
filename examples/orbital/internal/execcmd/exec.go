@@ -15,25 +15,25 @@ import (
 
 // Command returns the "exec" command.
 func Command() *climux.Command {
-	var service, command string
-	var args []string
+	service := climux.String("service", "Service whose container to exec into").
+		Aliases("s").
+		Required().
+		State()
+	command := climux.String("cmd", "Command to run inside the container").
+		Positional().
+		Required().
+		EndOfOptions().
+		State()
+	args := climux.Strings("arg", "Arguments to the command").
+		Positional().
+		State()
 	return climux.NewCommand("exec", "Run a one-off command inside a service's container").
 		Middleware(middleware.Audit).
-		Flags(
-			climux.String(&service, "service", "Service whose container to exec into").
-				Aliases("s").
-				Required(),
-			climux.String(&command, "cmd", "Command to run inside the container").
-				Positional().
-				Required().
-				EndOfOptions(),
-			climux.Strings(&args, "arg", "Arguments to the command").
-				Positional(),
-		).
+		Flags(service, command, args).
 		HandleFunc(
 			func(ctx context.Context, inv *climux.Invocation) error {
 				fmt.Fprintf(inv.Stdout, "%s: would run: %s\n",
-					service, strings.Join(append([]string{command}, args...), " "))
+					service.Value(), strings.Join(append([]string{command.Value()}, args.Value()...), " "))
 				return nil
 			},
 		)

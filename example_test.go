@@ -7,10 +7,24 @@ import (
 	"strings"
 )
 
+// Each flag holds its own value, and State returns the half of it the
+// handler reads.
 var (
-	flagLanguage   string
-	flagNoNewLines bool
-	flagMessage    []string
+	flagNoNewLines = Bool("n", "Do not print the trailing newline character").State()
+
+	// String flag to select a desired language. Can be specified with
+	// -l, --language or the HW_LANG environment variable.
+	flagLanguage = String("language", "Language (en, es, it or nl)").
+			Default("en").
+			Aliases("l").
+			Env("HW_LANG").
+			State()
+
+	// StringSlice flag to optionally print multiple positional
+	// arguments. Positional arguments are not denoted with "-" or "--".
+	flagMessage = Strings("MESSAGE", "Optional message to print").
+			Positional().
+			State()
 )
 
 var translations = map[string]string{
@@ -28,48 +42,20 @@ var App = NewCommand("helloworld", "Print \"Hello, World!\"").
 		"The helloworld utility writes \"Hello, World!\" to the standard\n"+
 			" output multiple languages.",
 	).
-	Flags(
-
-		Bool(
-			&flagNoNewLines,
-			"n",
-
-			"Do not print the trailing newline character"),
-
-		// String flag to select a desired language. Can be specified with
-		// -l, --language or the HW_LANG environment variable.
-		String(
-			&flagLanguage,
-			"language",
-
-			"Language (en, es, it or nl)").Default(
-
-			"en").
-			Aliases("l").
-			Env("HW_LANG"),
-
-		// StringSlice flag to optionally print multiple positional
-		// arguments. Positional arguments are not denoted with "-" or "--".
-		Strings(
-			&flagMessage,
-			"MESSAGE",
-
-			"Optional message to print").
-			Positional(),
-	).
+	Flags(flagNoNewLines, flagLanguage, flagMessage).
 	HandleFunc(helloWorld)
 
 // helloWorld is the HandlerFunc for the main App command.
 func helloWorld(ctx context.Context, inv *Invocation) error {
-	s, ok := translations[flagLanguage]
+	s, ok := translations[flagLanguage.Value()]
 	if !ok {
-		return fmt.Errorf("unsupported language: %s", flagLanguage)
+		return fmt.Errorf("unsupported language: %s", flagLanguage.Value())
 	}
-	if len(flagMessage) > 0 {
-		s = strings.Join(flagMessage, " ")
+	if message := flagMessage.Value(); len(message) > 0 {
+		s = strings.Join(message, " ")
 	}
 	fmt.Fprint(inv.Stdout, s)
-	if !flagNoNewLines {
+	if !flagNoNewLines.Value() {
 		fmt.Fprint(inv.Stdout, "\n")
 	}
 	return nil

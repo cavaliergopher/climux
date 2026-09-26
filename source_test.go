@@ -3,13 +3,12 @@ package climux
 import (
 	"context"
 	"testing"
-
-	"go.hotsrc.dev/climux/ir"
 )
 
 // TestSource covers the three sources a flag's value can have, and the
 // precedence between them: argv beats the environment, and the
-// environment beats the default a flag was constructed with.
+// environment beats the declared default. The flag reports all three
+// itself.
 func TestSource(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -37,59 +36,47 @@ func TestSource(t *testing.T) {
 			if tt.env != "" {
 				t.Setenv("APP_OUTPUT", tt.env)
 			}
-			var output string
-			cmd := NewCommand("app", "").Flags(
-				String(&output, "output", "").Default("json").Env("APP_OUTPUT"),
-			)
-			inv, err := Parse(cmd, tt.args...)
-			if err != nil {
+			output := String("output", "").Default("json").Env("APP_OUTPUT").State()
+			if _, err := Parse(NewCommand("app", "").Flags(output), tt.args...); err != nil {
 				t.Fatal(err)
 			}
-			if got, want := inv.Source("output"), tt.want; got != want {
-				t.Errorf("Source(%q) = %v, want %v", "output", got, want)
+			if got, want := output.Source(), tt.want; got != want {
+				t.Errorf("Source() = %v, want %v", got, want)
 			}
-			if got, want := inv.IsSet("output"), tt.want != SourceDefault; got != want {
-				t.Errorf("IsSet(%q) = %v, want %v", "output", got, want)
+			if got, want := output.IsSet(), tt.want != SourceDefault; got != want {
+				t.Errorf("IsSet() = %v, want %v", got, want)
 			}
-			assertString(t, tt.wantOn, output)
+			assertString(t, tt.wantOn, output.Value())
 		})
 	}
 }
 
-// TestSourceUndeclared covers the one name that reports SourceDefault
-// without a flag behind it, which is the case Lookup exists to tell
-// apart.
-func TestSourceUndeclared(t *testing.T) {
-	var verbose bool
-	cmd := NewCommand("app", "").Flags(Bool(&verbose, "verbose", ""))
-	inv, err := Parse(cmd, "--verbose")
-	if err != nil {
+// TestSourceBound covers the same answers for a flag bound to a variable
+// of the program's own: the variable and Value never disagree.
+func TestSourceBound(t *testing.T) {
+	var output string
+	outputFlag := String("output", "").Default("json").Bind(&output)
+	if _, err := Parse(NewCommand("app", "").Flags(outputFlag), "--output", "yaml"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := inv.Source("nonesuch"), SourceDefault; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "nonesuch", got, want)
-	}
-	if got := inv.Lookup("nonesuch"); got != nil {
-		t.Errorf("Lookup(%q) = %v, want nil", "nonesuch", got)
-	}
-	if got := inv.Lookup("verbose"); got == nil {
-		t.Fatalf("Lookup(%q) = nil, want the flag", "verbose")
-	}
-	if got, want := inv.Sources[inv.Lookup("verbose")], SourceArgs; got != want {
-		t.Errorf("Sources[verbose] = %v, want %v", got, want)
+	assertString(t, "yaml", output)
+	assertString(t, "yaml", outputFlag.State().Value())
+	if got, want := outputFlag.State().Source(), SourceArgs; got != want {
+		t.Errorf("Source() = %v, want %v", got, want)
 	}
 }
 
-// TestSourceScope covers a flag an ancestor declared, which is in scope
-// for the subcommand the command line reached and answers there.
+// TestSourceScope covers a flag an ancestor declared, which the line set
+// before it dispatched: its state says so, and a sibling's flag the line
+// never reached says the opposite.
 func TestSourceScope(t *testing.T) {
-	var verbose bool
-	var force bool
+	verbose := Bool("verbose", "").State()
+	force := Bool("force", "").State()
 	sub := NewCommand("deploy", "").
-		Flags(Bool(&force, "force", "")).
+		Flags(force).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil })
 	cmd := NewCommand("app", "").
-		Flags(Bool(&verbose, "verbose", "")).
+		Flags(verbose).
 		Subcommands(sub)
 
 	inv, err := Parse(cmd, "--verbose", "deploy")
@@ -99,11 +86,11 @@ func TestSourceScope(t *testing.T) {
 	if got, want := inv.Cmd.Name, "deploy"; got != want {
 		t.Fatalf("Cmd.Name = %q, want %q", got, want)
 	}
-	if got, want := inv.Source("verbose"), SourceArgs; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "verbose", got, want)
+	if got, want := verbose.Source(), SourceArgs; got != want {
+		t.Errorf("verbose.Source() = %v, want %v", got, want)
 	}
-	if got, want := inv.Source("force"), SourceDefault; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "force", got, want)
+	if got, want := force.Source(), SourceDefault; got != want {
+		t.Errorf("force.Source() = %v, want %v", got, want)
 	}
 }
 
@@ -121,51 +108,43 @@ func TestSourcePositional(t *testing.T) {
 		{name: "given empty", args: []string{""}, want: SourceArgs},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			var target string
-			cmd := NewCommand("app", "").Flags(
-				String(&target, "TARGET", "").Positional(),
-			)
-			inv, err := Parse(cmd, tt.args...)
-			if err != nil {
+			target := String("TARGET", "").Positional().State()
+			if _, err := Parse(NewCommand("app", "").Flags(target), tt.args...); err != nil {
 				t.Fatal(err)
 			}
-			if got, want := inv.Source("TARGET"), tt.want; got != want {
-				t.Errorf("Source(%q) = %v, want %v", "TARGET", got, want)
+			if got, want := target.Source(), tt.want; got != want {
+				t.Errorf("Source() = %v, want %v", got, want)
 			}
 		})
 	}
 }
 
 // TestSourceRepeated covers a flag given more than once, which has one
-// source however many occurrences it accumulated.
+// source however many occurrences it accumulated, and counts them.
 func TestSourceRepeated(t *testing.T) {
-	var tags []string
-	cmd := NewCommand("app", "").Flags(
-		Strings(&tags, "tag", "").NArgs(0, 0),
-	)
-	inv, err := Parse(cmd, "--tag", "a", "--tag", "b")
-	if err != nil {
+	tags := Strings("tag", "").NArgs(0, 0).State()
+	if _, err := Parse(NewCommand("app", "").Flags(tags), "--tag", "a", "--tag", "b"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := inv.Source("tag"), SourceArgs; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "tag", got, want)
+	if got, want := tags.Source(), SourceArgs; got != want {
+		t.Errorf("Source() = %v, want %v", got, want)
 	}
-	assertStrings(t, []string{"a", "b"}, tags)
+	if got, want := tags.Count(), 2; got != want {
+		t.Errorf("Count() = %d, want %d", got, want)
+	}
+	assertStrings(t, []string{"a", "b"}, tags.Value())
 }
 
 // TestSourceInterrupt covers a command line carrying an interrupt: the
 // line is read as usual, so a flag given beside it and one the
-// environment supplies are both recorded where they came from.
+// environment supplies are both recorded where they came from, and the
+// interrupt itself reports that it was given.
 func TestSourceInterrupt(t *testing.T) {
 	t.Setenv("APP_OUTPUT", "wide")
-	var verbose bool
-	var output string
-	cmd := NewCommand("app", "").
-		Flags(
-			Bool(&verbose, "verbose", ""),
-			String(&output, "output", "").Default("json").Env("APP_OUTPUT"),
-		).
-		HelpFlag()
+	verbose := Bool("verbose", "").State()
+	output := String("output", "").Default("json").Env("APP_OUTPUT").State()
+	help := HelpFlag().State()
+	cmd := NewCommand("app", "").Flags(verbose, output, help)
 
 	inv, err := Parse(cmd, "--verbose", "--help")
 	if err != nil {
@@ -174,13 +153,23 @@ func TestSourceInterrupt(t *testing.T) {
 	if inv.Interrupt == nil {
 		t.Fatal("expected the invocation to name an interrupt")
 	}
-	if got, want := inv.Source("verbose"), SourceArgs; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "verbose", got, want)
+	if got, want := verbose.Source(), SourceArgs; got != want {
+		t.Errorf("verbose.Source() = %v, want %v", got, want)
 	}
-	if got, want := inv.Source("output"), SourceEnv; got != want {
-		t.Errorf("Source(%q) = %v, want %v", "output", got, want)
+	if got, want := output.Source(), SourceEnv; got != want {
+		t.Errorf("output.Source() = %v, want %v", got, want)
 	}
-	assertString(t, "wide", output)
+	assertString(t, "wide", output.Value())
+	if got, want := help.IsSet(), true; got != want {
+		t.Errorf("help.IsSet() = %v, want %v", got, want)
+	}
+
+	if _, err := Parse(cmd); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := help.IsSet(), false; got != want {
+		t.Errorf("help.IsSet() after a line without it = %v, want %v", got, want)
+	}
 }
 
 // TestSourceString covers the words a Source is written as, which a
@@ -201,105 +190,38 @@ func TestSourceString(t *testing.T) {
 	}
 }
 
-// TestSourceInHandle covers the typed form of the same three answers,
-// asked through the declaration rather than through its name.
-func TestSourceInHandle(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		args []string
-		env  string
-		want Source
-	}{
-		{name: "defaulted", want: SourceDefault},
-		{name: "from argv", args: []string{"--output", "yaml"}, want: SourceArgs},
-		{name: "from the environment", env: "wide", want: SourceEnv},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.env != "" {
-				t.Setenv("APP_OUTPUT", tt.env)
-			}
-			var output string
-			outputFlag := String(&output, "output", "").Default("json").Env("APP_OUTPUT")
-			cmd := NewCommand("app", "").Flags(outputFlag)
-
-			inv, err := Parse(cmd, tt.args...)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got, want := outputFlag.SourceIn(inv), tt.want; got != want {
-				t.Errorf("SourceIn = %v, want %v", got, want)
-			}
-			if got, want := outputFlag.IsSetIn(inv), tt.want != SourceDefault; got != want {
-				t.Errorf("IsSetIn = %v, want %v", got, want)
-			}
-			if got, want := outputFlag.InScope(inv), true; got != want {
-				t.Errorf("InScope = %v, want %v", got, want)
-			}
-		})
-	}
-}
-
-// TestSourceInOtherSubtree is why the handle exists. Two sibling
-// commands may both declare "force", so the name form answers about
-// whichever one is in scope -- which is the wrong flag for a program
-// holding the other declaration.
-func TestSourceInOtherSubtree(t *testing.T) {
-	var deployForce, pushForce bool
-	deployFlag := Bool(&deployForce, "force", "")
-	pushFlag := Bool(&pushForce, "force", "")
+// TestSourceOtherSubtree is why a flag answers for itself. Two sibling
+// commands may both declare "force", and each state answers for its own
+// declaration and no other.
+func TestSourceOtherSubtree(t *testing.T) {
+	deployForce := Bool("force", "").State()
+	pushForce := Bool("force", "").State()
 	cmd := NewCommand("app", "").Subcommands(
-		NewCommand("deploy", "").Flags(deployFlag).
+		NewCommand("deploy", "").Flags(deployForce).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil }),
-		NewCommand("push", "").Flags(pushFlag).
+		NewCommand("push", "").Flags(pushForce).
 			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil }),
 	)
 
-	inv, err := Parse(cmd, "deploy", "--force")
-	if err != nil {
+	if _, err := Parse(cmd, "deploy", "--force"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := deployFlag.SourceIn(inv), SourceArgs; got != want {
-		t.Errorf("deploy --force SourceIn = %v, want %v", got, want)
+	if got, want := deployForce.Source(), SourceArgs; got != want {
+		t.Errorf("deploy --force Source() = %v, want %v", got, want)
 	}
-	if got, want := pushFlag.IsSetIn(inv), false; got != want {
-		t.Errorf("push --force IsSetIn = %v, want %v", got, want)
-	}
-	if got, want := pushFlag.InScope(inv), false; got != want {
-		t.Errorf("push --force InScope = %v, want %v", got, want)
-	}
-	// The name form cannot tell them apart, which is the whole point.
-	if got, want := inv.IsSet("force"), true; got != want {
-		t.Errorf("IsSet(%q) = %v, want %v", "force", got, want)
+	if got, want := pushForce.IsSet(), false; got != want {
+		t.Errorf("push --force IsSet() = %v, want %v", got, want)
 	}
 }
 
-// TestSourceInAncestor covers a handle held for a flag an ancestor
-// declared, which is in scope for every command beneath it.
-func TestSourceInAncestor(t *testing.T) {
-	var verbose bool
-	verboseFlag := Bool(&verbose, "verbose", "")
-	cmd := NewCommand("app", "").
-		Flags(verboseFlag).
-		Subcommands(NewCommand("deploy", "").
-			HandleFunc(func(ctx context.Context, inv *Invocation) error { return nil }))
-
-	inv, err := Parse(cmd, "--verbose", "deploy")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := verboseFlag.SourceIn(inv), SourceArgs; got != want {
-		t.Errorf("SourceIn = %v, want %v", got, want)
-	}
-}
-
-// TestSourceInMountedTwice covers one declaration reaching two subtrees
+// TestSourceMountedTwice covers one declaration reaching two subtrees
 // through a registry, which lowers it to a compiled flag per command.
-// The handle resolves to whichever of them was in scope.
-func TestSourceInMountedTwice(t *testing.T) {
-	var dryRun bool
-	dryRunFlag := Bool(&dryRun, "dry-run", "")
+// Both point at one state, so the declaration answers wherever the line
+// reached it, and a second parse of the tree starts it afresh.
+func TestSourceMountedTwice(t *testing.T) {
+	dryRun := Bool("dry-run", "").State()
 	registry := &Registry{}
-	registry.FlagGroups(NewFlagGroup("shared", "Shared", dryRunFlag))
+	registry.FlagGroups(NewFlagGroup("shared", "Shared", dryRun))
 
 	sub := func(name string) *Command {
 		return NewCommand(name, "").Mount(registry).
@@ -307,88 +229,16 @@ func TestSourceInMountedTwice(t *testing.T) {
 	}
 	cmd := NewCommand("app", "").Subcommands(sub("deploy"), sub("push"))
 
-	inv, err := Parse(cmd, "deploy", "--dry-run")
-	if err != nil {
+	if _, err := Parse(cmd, "deploy", "--dry-run"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := dryRunFlag.SourceIn(inv), SourceArgs; got != want {
-		t.Errorf("SourceIn = %v, want %v", got, want)
+	if got, want := dryRun.Source(), SourceArgs; got != want {
+		t.Errorf("Source() = %v, want %v", got, want)
 	}
-
-	// A second tree, a second compile, and the same declaration still
-	// resolves -- against the flag that tree lowered, not the first's.
-	inv, err = Parse(cmd, "push")
-	if err != nil {
+	if _, err := Parse(cmd, "push"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := dryRunFlag.SourceIn(inv), SourceDefault; got != want {
-		t.Errorf("SourceIn = %v, want %v", got, want)
-	}
-	if got, want := dryRunFlag.InScope(inv), true; got != want {
-		t.Errorf("InScope = %v, want %v", got, want)
-	}
-}
-
-// TestSourceInInterrupt covers the flag that ended the parse. It binds
-// no value, so nothing Set it, but the command line named it and that is
-// what a program asks about.
-func TestSourceInInterrupt(t *testing.T) {
-	helpFlag := HelpFlag()
-	cmd := NewCommand("app", "").Flags(helpFlag)
-
-	inv, err := Parse(cmd, "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if inv.Interrupt == nil {
-		t.Fatal("expected the invocation to name an interrupt")
-	}
-	if got, want := helpFlag.IsSetIn(inv), true; got != want {
-		t.Errorf("IsSetIn = %v, want %v", got, want)
-	}
-	if got, want := inv.IsSet("help"), true; got != want {
-		t.Errorf("IsSet(%q) = %v, want %v", "help", got, want)
-	}
-
-	inv, err = Parse(cmd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := helpFlag.IsSetIn(inv), false; got != want {
-		t.Errorf("IsSetIn = %v, want %v", got, want)
-	}
-}
-
-// TestOriginsAreDistinct guards the whole of what an Origin promises:
-// that no two declarations share one, and that none is the zero an
-// unstamped flag carries.
-func TestOriginsAreDistinct(t *testing.T) {
-	seen := make(map[ir.Origin]int)
-	for i := range 64 {
-		seen[ir.NewOrigin()] = i
-	}
-	if got, want := len(seen), 64; got != want {
-		t.Errorf("distinct origins = %d, want %d", got, want)
-	}
-	for o := range seen {
-		if o == 0 {
-			t.Error("NewOrigin returned the zero Origin, which belongs to no declaration")
-		}
-	}
-}
-
-// TestResolveZeroOrigin covers a flag no declaration was lowered into,
-// which is what a tree assembled by hand out of ir types holds.
-func TestResolveZeroOrigin(t *testing.T) {
-	cmd := NewCommand("app", "").Flags(Bool(new(bool), "verbose", ""))
-	inv, err := Parse(cmd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := inv.Resolve(0); got != nil {
-		t.Errorf("Resolve(0) = %v, want nil", got)
-	}
-	if got := inv.Resolve(ir.NewOrigin()); got != nil {
-		t.Errorf("Resolve(unstamped) = %v, want nil", got)
+	if got, want := dryRun.Source(), SourceDefault; got != want {
+		t.Errorf("Source() after a line without it = %v, want %v", got, want)
 	}
 }

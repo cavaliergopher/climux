@@ -25,22 +25,18 @@ func (ipType) Format(v net.IP) string { return v.String() }
 func (ipType) Kind() ir.Kind          { return ir.KindOpaque }
 
 // IPVar returns a net.IP flag with the specified name and usage string.
-// The argument p points to a net.IP variable in which to store the value
-// of the flag.
-func IPVar(p *net.IP, name, usage string) *FlagBuilder[net.IP] {
-	return Var(p, name, usage, ipType{})
+func IPVar(name, usage string) *FlagBuilder[net.IP] {
+	return Var(name, usage, ipType{})
 }
 
 func ExampleVarType() {
-	var ip net.IP
+	// configure a net.IP flag with our custom VarType
+	ip := IPVar("ip", "IP address to ping").Default(net.IPv6zero).State()
 
 	cmd := NewCommand("ping", "").
-		Flags(
-			// configure a net.IP flag with our custom VarType
-			IPVar(&ip, "ip", "IP address to ping").Default(net.IPv6zero),
-		).
+		Flags(ip).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			fmt.Fprintf(inv.Stdout, "ping: %s\n", ip)
+			fmt.Fprintf(inv.Stdout, "ping: %s\n", ip.Value())
 			return nil
 		})
 

@@ -35,10 +35,10 @@ func TestBitField(t *testing.T) {
 // and nothing else.
 func TestStringsFirstNamingReplacesDefault(t *testing.T) {
 	var v []string
-	if assertFlagParses(t, Strings(&v, "foo", "").Default([]string{"stable"}), "--foo=a", "--foo=b") {
+	if assertFlagParses(t, Strings("foo", "").Bind(&v).Default([]string{"stable"}), "--foo=a", "--foo=b") {
 		assertStrings(t, []string{"a", "b"}, v)
 	}
-	if assertFlagParses(t, Strings(&v, "foo", "").Default([]string{"stable"})) {
+	if assertFlagParses(t, Strings("foo", "").Bind(&v).Default([]string{"stable"})) {
 		assertStrings(t, []string{"stable"}, v)
 	}
 }
@@ -65,7 +65,7 @@ func (labelsType) Decode(v *map[string]string, s string) error {
 // TestVarAccumulates asserts that a VarType needs no state to accumulate.
 func TestVarAccumulates(t *testing.T) {
 	var labels map[string]string
-	flag := Var(&labels, "label", "", labelsType{}).NArgs(0, 0)
+	flag := Var("label", "", labelsType{}).Bind(&labels).NArgs(0, 0)
 	if assertFlagParses(t, flag, "--label=a=1", "--label=b=2") {
 		if got, want := fmt.Sprint(labels), "map[a:1 b:2]"; got != want {
 			t.Errorf("labels = %s, want %s", got, want)
@@ -97,7 +97,7 @@ func (yesNoType) Decode(v *string, s string) error {
 // that takes no argument when named alone.
 func TestVarIsBoolFlag(t *testing.T) {
 	var answer string
-	if assertFlagParses(t, Var(&answer, "confirm", "", yesNoType{}), "--confirm") {
+	if assertFlagParses(t, Var("confirm", "", yesNoType{}).Bind(&answer), "--confirm") {
 		if got, want := answer, "yes"; got != want {
 			t.Errorf("answer = %q, want %q", got, want)
 		}
@@ -108,11 +108,11 @@ func TestVarIsBoolFlag(t *testing.T) {
 // negative argument rather than wrapping it.
 func TestUintRejectsNegative(t *testing.T) {
 	var u uint
-	if _, err := Parse(NewCommand("test", "").Flags(Uint(&u, "n", "")), "--n=-1"); err == nil {
+	if _, err := Parse(NewCommand("test", "").Flags(Uint("n", "").Bind(&u)), "--n=-1"); err == nil {
 		t.Error("Uint accepted -1")
 	}
 	var u64 uint64
-	if _, err := Parse(NewCommand("test", "").Flags(Uint64(&u64, "n", "")), "--n=-1"); err == nil {
+	if _, err := Parse(NewCommand("test", "").Flags(Uint64("n", "").Bind(&u64)), "--n=-1"); err == nil {
 		t.Error("Uint64 accepted -1")
 	}
 }
@@ -122,7 +122,7 @@ func TestUintRejectsNegative(t *testing.T) {
 // else the declared default, else nothing.
 func TestDefault(t *testing.T) {
 	s := "stale"
-	flag := String(&s, "output", "").Default("json")
+	flag := String("output", "").Bind(&s).Default("json")
 	if got, want := s, "stale"; got != want {
 		t.Errorf("after declaring, s = %q, want %q", got, want)
 	}
@@ -134,13 +134,13 @@ func TestDefault(t *testing.T) {
 			t.Errorf("unnamed, after parsing s = %q, want the default %q", got, want)
 		}
 	}
-	if assertFlagParses(t, String(&s, "output", "").Default("json"), "--output=yaml") {
+	if assertFlagParses(t, String("output", "").Bind(&s).Default("json"), "--output=yaml") {
 		if got, want := s, "yaml"; got != want {
 			t.Errorf("named, after parsing s = %q, want %q", got, want)
 		}
 	}
 	s = "stale"
-	if assertFlagParses(t, String(&s, "output", "")) {
+	if assertFlagParses(t, String("output", "").Bind(&s)) {
 		if got, want := s, "stale"; got != want {
 			t.Errorf("no Default and unnamed, after parsing s = %q, want it untouched", got)
 		}
@@ -149,44 +149,44 @@ func TestDefault(t *testing.T) {
 
 func TestBool(t *testing.T) {
 	v := false
-	if assertFlagParses(t, Bool(&v, "foo", ""), "--foo") {
+	if assertFlagParses(t, Bool("foo", "").Bind(&v), "--foo") {
 		assertBool(t, true, v)
 	}
 }
 
 func TestDuration(t *testing.T) {
 	var v time.Duration
-	if assertFlagParses(t, Duration(&v, "foo", ""), "--foo=1s") {
+	if assertFlagParses(t, Duration("foo", "").Bind(&v), "--foo=1s") {
 		assertDuration(t, time.Second, v)
 	}
-	if assertFlagParses(t, Duration(&v, "foo", ""), "--foo=-1s") {
+	if assertFlagParses(t, Duration("foo", "").Bind(&v), "--foo=-1s") {
 		assertDuration(t, -time.Second, v)
 	}
 }
 
 func TestFloat64(t *testing.T) {
 	var v float64
-	if assertFlagParses(t, Float64(&v, "foo", ""), "--foo=1.0") {
+	if assertFlagParses(t, Float64("foo", "").Bind(&v), "--foo=1.0") {
 		assertFloat64(t, 1.0, v)
 	}
-	if assertFlagParses(t, Float64(&v, "foo", ""), "--foo=-1.0") {
+	if assertFlagParses(t, Float64("foo", "").Bind(&v), "--foo=-1.0") {
 		assertFloat64(t, -1.0, v)
 	}
 }
 
 func TestInt64(t *testing.T) {
 	var v int64
-	if assertFlagParses(t, Int64(&v, "foo", ""), "--foo=1") {
+	if assertFlagParses(t, Int64("foo", "").Bind(&v), "--foo=1") {
 		assertInt64(t, 1, v)
 	}
-	if assertFlagParses(t, Int64(&v, "foo", ""), "--foo=-1") {
+	if assertFlagParses(t, Int64("foo", "").Bind(&v), "--foo=-1") {
 		assertInt64(t, -1, v)
 	}
 }
 
 func TestString(t *testing.T) {
 	var v string
-	if assertFlagParses(t, String(&v, "foo", ""), "--foo=bar") {
+	if assertFlagParses(t, String("foo", "").Bind(&v), "--foo=bar") {
 		assertString(t, "bar", v)
 	}
 }
@@ -195,7 +195,7 @@ func TestStringSlice(t *testing.T) {
 	var v []string
 	if assertFlagParses(
 		t,
-		Strings(&v, "foo", ""),
+		Strings("foo", "").Bind(&v),
 		"--foo", "baz", "--foo", "qux",
 	) {
 		assertStrings(t, []string{"baz", "qux"}, v)
@@ -224,7 +224,7 @@ func TestFuncError(t *testing.T) {
 
 func TestFlagChoices(t *testing.T) {
 	var v string
-	flag := String(&v, "foo", "").Choices("bar", "baz")
+	flag := String("foo", "").Bind(&v).Choices("bar", "baz")
 	assertFlagParses(t, flag, "--foo=bar")
 	assertFlagParses(t, flag, "--foo=baz")
 	assertArgumentError(t, parseFlag(flag, "--foo=qux"))
@@ -233,20 +233,20 @@ func TestFlagChoices(t *testing.T) {
 }
 
 func ExampleFlagBuilder_Validate() {
-	var ip string
+	ip := String("ip", "IP Address to ping").
+		Default("127.0.0.1").
+		Validate(func(arg string) error {
+			if net.ParseIP(arg) == nil {
+				return fmt.Errorf("invalid IP: %s", arg)
+			}
+			return nil
+		}).
+		State()
 
 	cmd := NewCommand("ping", "").
-		Flags(
-			String(&ip, "ip", "IP Address to ping").Default("127.0.0.1").
-				Validate(func(arg string) error {
-					if net.ParseIP(arg) == nil {
-						return fmt.Errorf("invalid IP: %s", arg)
-					}
-					return nil
-				}),
-		).
+		Flags(ip).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			fmt.Fprintf(inv.Stdout, "ping: %s\n", ip)
+			fmt.Fprintf(inv.Stdout, "ping: %s\n", ip.Value())
 			return nil
 		})
 
@@ -339,16 +339,14 @@ func ExampleFunc() {
 }
 
 func ExampleStrings() {
-	var widgets []string
+	// Configure a repeatable string slice flag that must be specified at
+	// least once.
+	widgets := Strings("name", "Widget name").NArgs(1, 0).State()
 
 	cmd := NewCommand("create-widgets", "").
-		Flags(
-			// Configure a repeatable string slice flag that must be specified
-			// at least once.
-			Strings(&widgets, "name", "Widget name").NArgs(1, 0),
-		).
+		Flags(widgets).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
-			fmt.Printf("Created new widgets: %s", strings.Join(widgets, ", "))
+			fmt.Printf("Created new widgets: %s", strings.Join(widgets.Value(), ", "))
 			return nil
 		})
 
@@ -363,9 +361,9 @@ func TestFlagGroupStandalone(t *testing.T) {
 	var level, format string
 	group := NewFlagGroup(
 		"logging", "Logging options",
-		String(&level, "log-level", "Set log verbosity").Default("info"),
+		String("log-level", "Set log verbosity").Bind(&level).Default("info"),
 	).Flags(
-		String(&format, "log-format", "Log output format").Default("text"),
+		String("log-format", "Log output format").Bind(&format).Default("text"),
 	)
 	cmd := NewCommand("test", "").FlagGroups(group)
 
@@ -396,7 +394,7 @@ func TestFlagGroupStandalone(t *testing.T) {
 // behavior (the Value, the ValidateFunc) is dropped.
 func TestCompileFlag(t *testing.T) {
 	var s string
-	flg := String(&s, "name", "flag usage").Default("default-value").
+	flg := String("name", "flag usage").Bind(&s).Default("default-value").
 		Aliases("n").
 		NArgs(1, 3).
 		Hidden().
@@ -456,8 +454,8 @@ func TestCompileTakesValue(t *testing.T) {
 	var s string
 	var b bool
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", ""),
-		Bool(&b, "verbose", ""),
+		String("name", "").Bind(&s),
+		Bool("verbose", "").Bind(&b),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -478,7 +476,7 @@ func TestCompileTakesValue(t *testing.T) {
 // disallowed alongside positionals).
 func TestCompilePositional(t *testing.T) {
 	var s string
-	flg := String(&s, "ARG", "positional usage").Positional()
+	flg := String("ARG", "positional usage").Bind(&s).Positional()
 	cmd := NewCommand("test", "").Flags(flg)
 
 	node, err := cmd.Compile()
@@ -499,11 +497,11 @@ func TestCompileValueName(t *testing.T) {
 	var b bool
 	var tags []string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "usage"),
-		String(&o, "output", "usage").ValueName("path"),
-		Bool(&b, "verbose", "usage"),
-		String(&forced, "log-level", "usage"),
-		Strings(&tags, "tags", "usage").ValueName("tag"),
+		String("name", "usage").Bind(&s),
+		String("output", "usage").Bind(&o).ValueName("path"),
+		Bool("verbose", "usage").Bind(&b),
+		String("log-level", "usage").Bind(&forced),
+		Strings("tags", "usage").Bind(&tags).ValueName("tag"),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -522,8 +520,8 @@ func TestCompileValueName(t *testing.T) {
 func TestCompileName(t *testing.T) {
 	var s, arg string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "name", "").Aliases("n", "alias"),
-		String(&arg, "ARG", "").Positional(),
+		String("name", "").Bind(&s).Aliases("n", "alias"),
+		String("ARG", "").Bind(&arg).Positional(),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -564,19 +562,19 @@ func TestCompileKind(t *testing.T) {
 		ip  net.IP
 	)
 	cmd := NewCommand("test", "").Flags(
-		Bool(&bo, "bool", ""),
+		Bool("bool", "").Bind(&bo),
 		BitField(&bf, 0x1, "bitfield", ""),
-		Duration(&du, "duration", ""),
-		Float64(&fl, "float", ""),
+		Duration("duration", "").Bind(&du),
+		Float64("float", "").Bind(&fl),
 		Func("func", "", func(string) error { return nil }),
-		Int(&in, "int", ""),
-		Int64(&i64, "int64", ""),
-		String(&s, "string", ""),
-		Strings(&ss, "strings", ""),
-		Uint(&u, "uint", ""),
-		Uint64(&u64, "uint64", ""),
-		Var(&ks, "kind-var", "", kindStringType{}),
-		IPVar(&ip, "opaque-var", ""),
+		Int("int", "").Bind(&in),
+		Int64("int64", "").Bind(&i64),
+		String("string", "").Bind(&s),
+		Strings("strings", "").Bind(&ss),
+		Uint("uint", "").Bind(&u),
+		Uint64("uint64", "").Bind(&u64),
+		Var("kind-var", "", kindStringType{}).Bind(&ks),
+		IPVar("opaque-var", "").Bind(&ip),
 		Unbound("stop", "").Interrupt(func(ctx context.Context, inv *Invocation) error { return nil }),
 	)
 	node, err := cmd.Compile()
@@ -604,9 +602,9 @@ func TestPositionalIsShownByItsValueName(t *testing.T) {
 		flag *FlagBuilder[string]
 		want string
 	}{
-		{"FromFlagName", String(new(string), "src", "usage").Positional(), "SRC"},
-		{"Overridden", String(new(string), "src", "usage").Positional().ValueName("path"), "PATH"},
-		{"DashesBecomeUnderscores", String(new(string), "log-level", "usage").Positional(), "LOG_LEVEL"},
+		{"FromFlagName", String("src", "usage").Positional(), "SRC"},
+		{"Overridden", String("src", "usage").Positional().ValueName("path"), "PATH"},
+		{"DashesBecomeUnderscores", String("log-level", "usage").Positional(), "LOG_LEVEL"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := NewCommand("test", "").Flags(tt.flag.Required())
@@ -638,7 +636,7 @@ func TestPositionalIsShownByItsValueName(t *testing.T) {
 // only a short name still reports itself by one.
 func TestCanonicalNameCoalesces(t *testing.T) {
 	var s string
-	flg := String(&s, "", "usage").Aliases("v")
+	flg := String("", "usage").Bind(&s).Aliases("v")
 	cmd := NewCommand("test", "").Flags(flg)
 
 	node, err := cmd.Compile()
@@ -662,7 +660,7 @@ func TestCanonicalNameCoalesces(t *testing.T) {
 func TestAliasIsMatchedButNotPrinted(t *testing.T) {
 	var s string
 	cmd := NewCommand("test", "").Flags(
-		String(&s, "colour", "which colour").Aliases("", "color"),
+		String("colour", "which colour").Bind(&s).Aliases("", "color"),
 	)
 	if _, err := Parse(cmd, "--color", "red"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -691,7 +689,7 @@ func TestAliasIsMatchedButNotPrinted(t *testing.T) {
 func TestAliasPositionIsNotEnforced(t *testing.T) {
 	var s string
 	node, err := NewCommand("test", "").Flags(
-		String(&s, "foo", "").Aliases("xx"),
+		String("foo", "").Bind(&s).Aliases("xx"),
 	).Compile()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

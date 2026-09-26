@@ -28,37 +28,35 @@ import (
 // of a real authorization check against an actor directory. Returning
 // without calling next is how a middleware refuses an invocation.
 //
-// It reads identity.Actor at call time rather than closing over a copy,
-// because the root --actor flag it comes from is not applied until the
-// command line parses, which is after every command in the tree was
-// built.
+// It reads identity.Actor at call time rather than closing over its
+// value, because the root --actor flag is not applied until the command
+// line parses, which is after every command in the tree was built.
 func Audit(next climux.HandlerFunc) climux.HandlerFunc {
 	return func(ctx context.Context, inv *climux.Invocation) error {
-		if identity.Actor == "anonymous" {
+		if actor := identity.Actor.Value(); actor == "anonymous" {
 			return fmt.Errorf(
 				"%s: refusing to run as %q; pass --actor or set ORBITAL_ACTOR",
-				inv.Cmd.FullName, identity.Actor,
+				inv.Cmd.FullName, actor,
 			)
 		}
 		return next(ctx, inv)
 	}
 }
 
-// outFile is set by the --out flag below. It is read at call time for the
+// outFile is the --out flag Output reads. It is read at call time for the
 // same reason identity.Actor is: the flag is not applied until the
 // command line parses, long after the tree was built.
-var outFile string
+var outFile = climux.String("out",
+	"Write command output to FILE instead of stdout").
+	ValueName("file").
+	Persistent().
+	State()
 
 // OutputFlag returns the --out flag Output reads. The flag ships with the
 // middleware because neither is any use without the other; main.go
 // declares both on the root, so every command in the tree can be
 // redirected.
-func OutputFlag() climux.Flag {
-	return climux.String(&outFile, "out",
-		"Write command output to FILE instead of stdout").
-		ValueName("file").
-		Persistent()
-}
+func OutputFlag() climux.Flag { return outFile }
 
 // Output sends whatever the handler writes to inv.Stdout to the file
 // named by --out, and closes it once the handler returns. Replacing a
@@ -70,10 +68,10 @@ func OutputFlag() climux.Flag {
 // and so runs no middleware either.
 func Output(next climux.HandlerFunc) climux.HandlerFunc {
 	return func(ctx context.Context, inv *climux.Invocation) error {
-		if outFile == "" {
+		if outFile.Value() == "" {
 			return next(ctx, inv)
 		}
-		f, err := os.Create(outFile)
+		f, err := os.Create(outFile.Value())
 		if err != nil {
 			return err
 		}

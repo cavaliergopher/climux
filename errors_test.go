@@ -14,7 +14,7 @@ import (
 func TestNewArgumentErrorfReportsLikeTheParser(t *testing.T) {
 	var plugin string
 	cmd := NewCommand("kubectl", "").
-		Flags(String(&plugin, "PLUGIN", "").Positional()).
+		Flags(String("PLUGIN", "").Bind(&plugin).Positional()).
 		Subcommands(NewCommand("get", "").HandleFunc(
 			func(ctx context.Context, inv *Invocation) error { return nil })).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {

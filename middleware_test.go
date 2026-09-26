@@ -138,7 +138,7 @@ func TestMiddlewareRefusesInvocation(t *testing.T) {
 func TestMiddlewareSeesParsedFlags(t *testing.T) {
 	var actor, seen string
 	app := NewCommand("app", "").
-		Flags(String(&actor, "actor", "")).
+		Flags(String("actor", "").Bind(&actor)).
 		Middleware(func(next HandlerFunc) HandlerFunc {
 			return func(ctx context.Context, inv *Invocation) error {
 				seen = actor

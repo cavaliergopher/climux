@@ -32,21 +32,25 @@ You can import all global flags defined using Go's flag library with FromFlagSet
 	var App = climux.NewCommand(os.Args[0], "").
 		FlagGroups(climux.FromFlagSet("go", "Options", flag.CommandLine))
 
-You can bind a flag to a variable using the Var functions.
+A flag holds its own value. State returns the half of a flag a handler
+reads, and a program that wants the value in a variable of its own says so
+with Bind.
 
-	var flagvar int
+	var flagvar = climux.Int("flagname", "help message for flagname").
+		Default(1234).
+		State()
 
+	var App = climux.NewCommand(os.Args[0], "").Flags(flagvar)
+
+	var n int
 	var App = climux.NewCommand(os.Args[0], "").
-		Flags(
-			climux.Int(&flagvar, "flagname", "help message for flagname").
-				Default(1234),
-		)
+		Flags(climux.Int("n", "help message for n").Bind(&n))
 
 Or you can bind a variable of any type by writing a VarType for it, which
 says how a value is decoded, shown and classified, and coupling the two
 with Var:
 
-	climux.Var(&flagVal, "name", "help message for flagname", myType{})
+	climux.Var("name", "help message for flagname", myType{})
 
 Nothing is written to the variable until the command line is parsed, and
 then it is written once: what the command line says, or the default if
@@ -98,59 +102,41 @@ After all flags are defined, call
 to parse the command line into the defined flags and call the handler associated with the command or
 any if its subcommands if specified in os.Args.
 
-Flags may then be used directly.
+Flags may then be read directly.
 
-	fmt.Println("ip has value ", ip)
-	fmt.Println("flagvar has value ", flagvar)
+	fmt.Println("flagname has value ", flagvar.Value())
+	fmt.Println("n has value ", n)
 
 # Where a value came from
 
-A variable a flag is bound to says what the flag holds, never how it came to
-hold it: a flag nobody named holds the default its constructor gave it, and a
-flag named with that same value looks identical afterwards. Where the answer
-matters -- a flag that means something different for being given at all, or a
-report that says which setting the operator actually chose -- ask the
-invocation.
-
-	func MyAppHandler(ctx context.Context, inv *climux.Invocation) error {
-		if inv.IsSet("output") {
-			// The operator chose a format; honor it as given.
-		}
-		fmt.Fprintln(inv.Stdout, "output came from", inv.Source("output"))
-		return nil
-	}
-
-Source reports one of three answers -- SourceArgs, SourceEnv or SourceDefault
--- in the precedence the parser applies them: the command line wins over a
-flag's environment variable, which wins over its default. IsSet is the
-yes-or-no form, true for either of the first two. Both take a flag's declared
-name, undecorated: "output" rather than "--output".
-
-A program that keeps its declarations in variables asks them instead, which
-costs no name at all:
+A value says what the flag holds, never how it came to hold it: a flag
+nobody named holds its default, and a flag named with that same value looks
+identical afterwards. Where the answer matters -- a flag that means something
+different for being given at all, or a report that says which setting the
+operator actually chose -- the flag's state says.
 
 	var (
-		outputFlag   = climux.String(&output, "output", "Output format")
-		templateFlag = climux.String(&template, "template", "Go template")
+		output   = climux.String("output", "Output format").Default("table").State()
+		template = climux.String("template", "Go template").State()
 	)
 
 	func MyAppHandler(ctx context.Context, inv *climux.Invocation) error {
-		// --template picks the format, but only if -o did not.
-		if template != "" && !outputFlag.IsSetIn(inv) {
-			output = "go-template"
+		// --template picks the format, but only if --output did not.
+		format := output.Value()
+		if template.Value() != "" && !output.IsSet() {
+			format = "go-template"
 		}
+		fmt.Fprintln(inv.Stdout, "output came from", output.Source())
 		return nil
 	}
 
-FlagBuilder.IsSetIn and FlagBuilder.SourceIn answer the same two questions as the invocation's
-own, and answer them better: a name is unique only along one command path, so
-two sibling commands may both declare "force" and the name form reports
-whichever is in scope. A declaration answers for itself or for nothing, and
-Flag.InScope is what says which.
-
-A source belongs to one reading of one command line rather than to the flag
-itself, so it is the invocation that carries it and nothing about the flag
-changes. See Invocation.Sources for the whole record.
+FlagState.Source reports one of three answers -- SourceArgs, SourceEnv or
+SourceDefault -- in the precedence the parser applies them: the command line
+wins over a flag's environment variable, which wins over its default. IsSet is
+the yes-or-no form, true for either of the first two, and Count says how many
+times the line named the flag. A state answers for its own declaration and no
+other, so two sibling commands may both declare "force" without either
+answering for the other.
 
 # Help and version
 

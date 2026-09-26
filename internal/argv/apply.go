@@ -50,12 +50,11 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 	if len(res.errs) > 0 {
 		return nil, res.errs[0]
 	}
-	resetDefaults(root)
+	resetStates(root)
 
 	active := root
 	scope := []*ir.Command{root}
 	counts := make(map[*ir.Flag]int)
-	sources := make(map[*ir.Flag]ir.Source)
 	var interrupt *ir.Flag
 	var interrupted *ir.Command
 	for _, instr := range res.instructions {
@@ -65,14 +64,14 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 				return nil, err
 			}
 			counts[instr.flag]++
-			sources[instr.flag] = ir.SourceArgs
+			setSource(instr.flag, ir.SourceArgs)
 		case instDispatch:
 			active = instr.cmd
 			scope = append(scope, active)
 		case instGiven:
 			// Bound to no value, so nothing Set it, but the command line
 			// named it, which is the whole of what it can report.
-			sources[instr.flag] = ir.SourceArgs
+			setSource(instr.flag, ir.SourceArgs)
 		case instInterrupt:
 			if interrupt == nil {
 				interrupt, interrupted = instr.flag, instr.cmd
@@ -81,11 +80,11 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 			// line named it: recording it is what lets a program ask
 			// whether it was given the same way it asks about any other
 			// flag.
-			sources[instr.flag] = ir.SourceArgs
+			setSource(instr.flag, ir.SourceArgs)
 		}
 	}
 
-	if err := applyEnvVars(scope, counts, sources); err != nil {
+	if err := applyEnvVars(scope, counts); err != nil {
 		return nil, err
 	}
 	applyDefaults(root)
@@ -94,37 +93,47 @@ func apply(root *ir.Command, res lexResult) (*ir.Invocation, error) {
 		return nil, err
 	}
 	if interrupt != nil {
-		return invocationFor(interrupted, interrupt, sources), nil
+		return invocationFor(interrupted, interrupt), nil
 	}
-	return invocationFor(active, nil, sources), nil
+	return invocationFor(active, nil), nil
 }
 
-// resetDefaults forgets the previous reading of every flag under cmd, so
+// resetStates forgets the previous reading of every flag under cmd, so
 // that this one starts from nothing named. It writes no variable.
-func resetDefaults(cmd *ir.Command) {
+func resetStates(cmd *ir.Command) {
 	for _, group := range cmd.FlagGroups {
 		for _, f := range group.Flags {
-			if f.Reset != nil {
-				f.Reset()
+			if f.State != nil {
+				f.State.Reset()
 			}
 		}
 	}
 	for _, sub := range cmd.Subcommands {
-		resetDefaults(sub)
+		resetStates(sub)
 	}
 }
 
-// applyDefaults gives every flag under cmd the chance to write its
-// default, which it does if the reading never named it. It covers the
-// whole tree rather than the scope the line reached, because a flag out
-// of scope holding its default is what a program expects of it, and it
-// leaves the decision to the flag, because a declaration mounted twice
-// in one path is two nodes here and one variable there.
+// setSource notes that the command line or the environment named f, in
+// the state its declaration owns. It runs for a flag that binds no value
+// too, which is what an unbound flag's presence rides on.
+func setSource(f *ir.Flag, src ir.Source) {
+	if f.State != nil {
+		f.State.Source = src
+		f.State.Count++
+	}
+}
+
+// applyDefaults writes the default of every flag under cmd that the
+// reading never named. It covers the whole tree rather than the scope
+// the line reached, because a flag out of scope holding its default is
+// what a program expects of it. The count is the declaration's, so a
+// flag mounted twice in one path -- two nodes here, one variable there
+// -- is named once for both.
 func applyDefaults(cmd *ir.Command) {
 	for _, group := range cmd.FlagGroups {
 		for _, f := range group.Flags {
-			if f.SetDefault != nil {
-				f.SetDefault()
+			if s := f.State; s != nil && s.Count == 0 && s.SetDefault != nil {
+				s.SetDefault()
 			}
 		}
 	}
@@ -146,16 +155,16 @@ func setFlag(active *ir.Command, f *ir.Flag, token string) error {
 
 // applyEnvVars fills every flag in scope from its environment variable,
 // for whatever counts has no occurrence of yet, then counts it as seen so
-// validateNArgs sees it satisfied and records it in sources as having
-// come from the environment. A flag the command line already set is
-// skipped, which is what leaves its recorded source ir.SourceArgs.
+// validateNArgs sees it satisfied and records on its state that the
+// value came from the environment. A flag the command line already set
+// is skipped, which is what leaves its recorded source ir.SourceArgs.
 //
 // scope is the commands dispatched through, beginning at the one Parse was
 // called on rather than at the root: a flag an ancestor of that command
 // declares was never matchable, so it is not checked here either. Scope
 // order, then group order, then declaration order within each command:
 // this is deterministic.
-func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int, sources map[*ir.Flag]ir.Source) error {
+func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int) error {
 	for _, cmd := range scope {
 		for _, group := range cmd.FlagGroups {
 			for _, f := range group.Flags {
@@ -170,7 +179,7 @@ func applyEnvVars(scope []*ir.Command, counts map[*ir.Flag]int, sources map[*ir.
 					return err
 				}
 				counts[f]++
-				sources[f] = ir.SourceEnv
+				setSource(f, ir.SourceEnv)
 			}
 		}
 	}
@@ -227,16 +236,11 @@ func validateNArgs(active *ir.Command, scope []*ir.Command, counts map[*ir.Flag]
 // active, naming every command in path from the one Parse was called on to
 // cmd itself.
 //
-// sources is the record of where each flag set along the way got its
-// value, and is handed over rather than copied: apply is done with it by
-// the time it builds the Invocation, and nothing else holds a reference.
-//
 // Its streams are left nil. Streams are process environment, so the entry
 // point holding them fills them in.
-func invocationFor(cmd *ir.Command, interrupt *ir.Flag, sources map[*ir.Flag]ir.Source) *ir.Invocation {
+func invocationFor(cmd *ir.Command, interrupt *ir.Flag) *ir.Invocation {
 	return &ir.Invocation{
 		Cmd:       cmd,
 		Interrupt: interrupt,
-		Sources:   sources,
 	}
 }

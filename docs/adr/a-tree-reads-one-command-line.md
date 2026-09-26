@@ -1,11 +1,11 @@
 # A tree reads one command line
 
-Status: accepted, 2026-09-02. Revised 2026-09-23 by
-docs/adr/a-flag-holds-its-own-value.md, which enforces the rule: a second
-Parse against one tree now reports an error rather than leaving what the
-flags hold unspecified. The reasoning below stands; only the deliberate
-absence of a check does not, because a flag that holds its own value is the
-place to record that it has been read.
+Status: accepted, 2026-09-02. Revised 2026-09-26 by
+docs/adr/a-flag-holds-its-own-value.md, which makes a second Parse against
+one tree well-defined rather than unspecified: a reading begins by forgetting
+the one before it, and writes each variable once. The rule below stands as
+the shape of a program; what it no longer needs is a warning that reading
+twice is undefined.
 
 ## Context
 

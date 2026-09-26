@@ -56,10 +56,10 @@ func TestShortOptionGrouping(t *testing.T) {
 			var a, b bool
 			var f, operand string
 			cmd := NewCommand("test", "").Flags(
-				Bool(&a, "alpha", "").Aliases("a"),
-				Bool(&b, "bravo", "").Aliases("b"),
-				String(&f, "foxtrot", "").Aliases("f"),
-				String(&operand, "OPERAND", "").Positional(),
+				Bool("alpha", "").Bind(&a).Aliases("a"),
+				Bool("bravo", "").Bind(&b).Aliases("b"),
+				String("foxtrot", "").Bind(&f).Aliases("f"),
+				String("OPERAND", "").Bind(&operand).Positional(),
 			)
 			_, err := Parse(cmd, tt.args...)
 			if tt.err {
@@ -121,9 +121,9 @@ func TestAttachedValues(t *testing.T) {
 			var verbose bool
 			var name string
 			cmd := NewCommand("test", "").Flags(
-				Int(&count, "count", "").Aliases("c"),
-				Bool(&verbose, "verbose", ""),
-				String(&name, "name", "").Aliases("n"),
+				Int("count", "").Bind(&count).Aliases("c"),
+				Bool("verbose", "").Bind(&verbose),
+				String("name", "").Bind(&name).Aliases("n"),
 			)
 			_, err := Parse(cmd, tt.args...)
 			if tt.err {
@@ -154,7 +154,7 @@ func TestEmptyAttachedValue(t *testing.T) {
 		t.Helper()
 		var name string
 		cmd := NewCommand("test", "").Flags(
-			String(&name, "name", "").Default("unset").Aliases("n"),
+			String("name", "").Bind(&name).Default("unset").Aliases("n"),
 		)
 		if _, err := Parse(cmd, arg); err != nil {
 			t.Fatal(err)
@@ -166,7 +166,7 @@ func TestEmptyAttachedValue(t *testing.T) {
 
 	parseVerbose := func(arg string) error {
 		cmd := NewCommand("test", "").Flags(
-			Bool(new(bool), "verbose", "").Aliases("v"),
+			Bool("verbose", "").Aliases("v"),
 		)
 		_, err := Parse(cmd, arg)
 		return err
@@ -187,12 +187,12 @@ func TestEmptyAttachedValue(t *testing.T) {
 func TestUnrecognizedOptionNamesSubtree(t *testing.T) {
 	newApp := func() *Command {
 		del := NewCommand("delete", "").Flags(
-			Bool(new(bool), "force", "").Aliases("f"),
-			Bool(new(bool), "dry-run", ""),
+			Bool("force", "").Aliases("f"),
+			Bool("dry-run", ""),
 		)
 		add := NewCommand("add", "").Flags(
-			Bool(new(bool), "tags", "").Aliases("t"),
-			Bool(new(bool), "dry-run", ""),
+			Bool("tags", "").Aliases("t"),
+			Bool("dry-run", ""),
 		)
 		remote := NewCommand("remote", "").Subcommands(add)
 		return NewCommand("app", "").Subcommands(del, remote)
@@ -239,10 +239,10 @@ func TestUnrecognizedOptionNamesSubtree(t *testing.T) {
 func TestUnrecognizedOptionSkipsHiddenSubtree(t *testing.T) {
 	newApp := func() *Command {
 		hidden := NewCommand("hidden", "").
-			Flags(Bool(new(bool), "force", "")).
+			Flags(Bool("force", "")).
 			Hidden()
 		visible := NewCommand("visible", "").
-			Flags(Bool(new(bool), "tags", ""))
+			Flags(Bool("tags", ""))
 		return NewCommand("app", "").Subcommands(hidden, visible)
 	}
 
@@ -315,7 +315,7 @@ func TestParseOperandNoSlot(t *testing.T) {
 func TestValidateNArgsSpansThePath(t *testing.T) {
 	newApp := func(name *string) *Command {
 		return NewCommand("app", "").
-			Flags(String(name, "name", "").Required().Persistent()).
+			Flags(String("name", "").Bind(name).Required().Persistent()).
 			Subcommands(NewCommand("sub", ""))
 	}
 
@@ -392,8 +392,8 @@ func TestTerminatorEndsOptions(t *testing.T) {
 			var flag string
 			var files []string
 			cmd := NewCommand("test", "").Flags(
-				String(&flag, "flag", ""),
-				Strings(&files, "file", "").Positional().NArgs(0, 0),
+				String("flag", "").Bind(&flag),
+				Strings("file", "").Bind(&files).Positional().NArgs(0, 0),
 			)
 			inv, err := Parse(cmd, tt.args...)
 			if err != nil {
@@ -413,7 +413,7 @@ func TestTerminatorEndsOptions(t *testing.T) {
 func TestTerminatorSelectsSubcommand(t *testing.T) {
 	var files []string
 	sub := NewCommand("sub", "").Flags(
-		Strings(&files, "file", "").Positional().NArgs(0, 0),
+		Strings("file", "").Bind(&files).Positional().NArgs(0, 0),
 	)
 	cmd := NewCommand("test", "").Subcommands(sub)
 	inv, err := Parse(cmd, "--", "sub", "-rf")
@@ -435,7 +435,7 @@ func TestTerminatorSelectsSubcommand(t *testing.T) {
 func TestPositionalIsNotAnOption(t *testing.T) {
 	var src string
 	cmd := NewCommand("test", "").Flags(
-		String(&src, "src", "").Positional(),
+		String("src", "").Bind(&src).Positional(),
 	)
 	_, err := Parse(cmd, "--src=x")
 	if got, want := humanMessage(err), "unrecognized option: --src"; got != want {
@@ -479,15 +479,15 @@ func FuzzParse(f *testing.F) {
 			files   []string
 		)
 		sub := NewCommand("sub", "").Flags(
-			String(&subName, "sub-name", "").Aliases("s"),
-			Strings(&files, "file", "").Positional().NArgs(0, 0),
+			String("sub-name", "").Bind(&subName).Aliases("s"),
+			Strings("file", "").Bind(&files).Positional().NArgs(0, 0),
 		)
 		cmd := NewCommand("fuzz", "").
 			Flags(
-				String(&name, "name", "").Aliases("n"),
-				Bool(&verbose, "verbose", "").Aliases("v"),
-				Int(&count, "count", "").Aliases("c"),
-				Strings(&tags, "tag", "").Aliases("t"),
+				String("name", "").Bind(&name).Aliases("n"),
+				Bool("verbose", "").Bind(&verbose).Aliases("v"),
+				Int("count", "").Bind(&count).Aliases("c"),
+				Strings("tag", "").Bind(&tags).Aliases("t"),
 			).
 			Subcommands(sub, NewCommand("other", ""))
 		inv, err := Parse(cmd, arg1, arg2, arg3)
@@ -505,9 +505,9 @@ func TestTerminator(t *testing.T) {
 	var tail []string
 	cmd := NewCommand("test", "").
 		Flags(
-			String(&foo, "foo", ""),
-			Bool(&bar, "bar", ""),
-			Strings(&tail, "arg", "").Positional(),
+			String("foo", "").Bind(&foo),
+			Bool("bar", "").Bind(&bar),
+			Strings("arg", "").Bind(&tail).Positional(),
 		)
 	tailArgs := []string{
 		"baz",
@@ -533,7 +533,7 @@ func TestTerminator(t *testing.T) {
 func TestUnrecognizedOptionNamesMountedFlags(t *testing.T) {
 	set := new(Registry)
 	set.FlagGroups(NewFlagGroup("shared", "Shared options",
-		Bool(new(bool), "force", ""),
+		Bool("force", ""),
 	))
 	sub := NewCommand("delete", "").Mount(set)
 	app := NewCommand("app", "").Subcommands(sub)
@@ -593,9 +593,9 @@ func TestNegatedBool(t *testing.T) {
 			var verbose, loud bool
 			var name string
 			cmd := NewCommand("test", "").Flags(
-				Bool(&verbose, "verbose", "").Default(true).Aliases("v"),
-				Bool(&loud, "loud", "").Default(true).Aliases("", "noisy"),
-				String(&name, "name", ""),
+				Bool("verbose", "").Bind(&verbose).Default(true).Aliases("v"),
+				Bool("loud", "").Bind(&loud).Default(true).Aliases("", "noisy"),
+				String("name", "").Bind(&name),
 			)
 			_, err := Parse(cmd, tt.args...)
 			if tt.err {
@@ -620,7 +620,7 @@ func TestNegatedBool(t *testing.T) {
 func TestNegatedBoolIsNotAdvertised(t *testing.T) {
 	var verbose bool
 	cmd := NewCommand("test", "").Flags(
-		Bool(&verbose, "verbose", "be chatty"),
+		Bool("verbose", "be chatty").Bind(&verbose),
 	)
 	node, err := cmd.Compile()
 	if err != nil {
@@ -646,8 +646,8 @@ func TestInterruptFlagReadsTheRest(t *testing.T) {
 			Unbound("where", "").Interrupt(func(ctx context.Context, inv *Invocation) error {
 				return nil
 			}),
-			String(&format, "format", ""),
-			Strings(&topics, "topic", "").Positional(),
+			String("format", "").Bind(&format),
+			Strings("topic", "").Bind(&topics).Positional(),
 		)
 	inv, err := Parse(cmd, "--where", "--format=json", "extra")
 	if err != nil {
@@ -697,12 +697,12 @@ func TestInterruptBindsItsValue(t *testing.T) {
 		topic, got = "", ""
 		return NewCommand("app", "").
 			Flags(
-				String(&topic, "help", "").Interrupt(
+				String("help", "").Bind(&topic).Interrupt(
 					func(ctx context.Context, inv *Invocation) error {
 						got = topic
 						return nil
 					}),
-				String(new(string), "name", "").Required(),
+				String("name", "").Required(),
 			).
 			Subcommands(NewCommand("deploy", ""))
 	}
@@ -726,7 +726,7 @@ func TestInterruptForgivesOnlyWhatIsMissing(t *testing.T) {
 	build := func() *Command {
 		return NewCommand("test", "").
 			HelpFlag().
-			Flags(String(new(string), "name", "").Required()).
+			Flags(String("name", "").Required()).
 			Subcommands(VersionCommand("1.0"))
 	}
 	for _, tt := range []struct {

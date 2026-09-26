@@ -22,8 +22,8 @@ func (c *exampleCommand) Command() *Command {
 	return NewCommand("example", "An example CLI program").
 		HelpFlag().
 		Flags(
-			String(&c.Species, "species", "the species we are studying").Default("Gopher"),
-			String(&c.GopherType, "gopher_type", "the variety of gopher").Default("Pocket"),
+			String("species", "the species we are studying").Default("Gopher").Bind(&c.Species),
+			String("gopher_type", "the variety of gopher").Default("Pocket").Bind(&c.GopherType),
 		).
 		HandleFunc(c.Run)
 }

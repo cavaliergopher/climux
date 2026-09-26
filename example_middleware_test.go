@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-// auditFlags is the settings struct the fictional platform team owns. Its
-// actor is set from a flag on the root command, and the middleware below
-// reads it back at call time rather than being handed a copy at
-// registration, so mounting order cannot matter.
-var auditFlags struct {
-	actor string
-}
+// actor is the flag the fictional platform team owns, mounted on the
+// root command below. The middleware reads it at call time rather than
+// being handed its value at registration, so mounting order cannot
+// matter. It is one flag mounted in three trees, so it says what an
+// unnamed --actor means rather than leaving the last run's answer in
+// place.
+var actor = String("actor", "Who is running this").Default("").State()
 
 // requireActor refuses to run anything until the caller has said who they
 // are. A middleware that returns without calling next stops the
@@ -24,10 +24,10 @@ var auditFlags struct {
 // hook, and Exitf names the exit code the refusal exits with.
 func requireActor(next HandlerFunc) HandlerFunc {
 	return func(ctx context.Context, inv *Invocation) error {
-		if auditFlags.actor == "" {
+		if actor.Value() == "" {
 			return Exitf(ExitCodeUsage, "%s: pass --actor to say who is running this", inv.Cmd.FullName)
 		}
-		fmt.Fprintf(inv.Stderr, "audit: %s by %s\n", inv.Cmd.FullName, auditFlags.actor)
+		fmt.Fprintf(inv.Stderr, "audit: %s by %s\n", inv.Cmd.FullName, actor.Value())
 		return next(ctx, inv)
 	}
 }
@@ -53,13 +53,11 @@ func Example_middleware() {
 	// subcommand below knows they exist.
 	//
 	// The tree is built per run because one command line is all a tree
-	// reads: this example shows three, where a program shows one. The
-	// variable is shared across them, so the flag says what an unnamed
-	// --actor means rather than leaving the last run's answer in place.
+	// reads: this example shows three, where a program shows one.
 	newApp := func() *Command {
 		return NewCommand("fleet", "Operate the fleet").
 			Middleware(requireActor, timing).
-			Flags(String(&auditFlags.actor, "actor", "Who is running this").Default("")).
+			Flags(actor).
 			Subcommands(
 				NewCommand("restart", "Restart a service").
 					HandleFunc(func(ctx context.Context, inv *Invocation) error {

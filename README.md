@@ -45,7 +45,7 @@ var flagName string
 
 var App = climux.NewCommand("greet", "Print a greeting").
 	Flags(
-		climux.String(&flagName, "name", "Who to greet").Default("World"),
+		climux.String("name", "Who to greet").Default("World").Bind(&flagName),
 	).
 	HandleFunc(func(ctx context.Context, inv *climux.Invocation) error {
 		fmt.Fprintf(inv.Stdout, "Hello, %s!\n", flagName)
@@ -59,8 +59,8 @@ func main() {
 }
 ```
 
-Flag values are stored in variables you own, so they are read directly with no
-lookup by name. Configuration errors — a duplicate flag, a positional argument
+A flag holds its own value, read through the flag with no lookup by name, or
+kept in a variable you own with `Bind`. Configuration errors — a duplicate flag, a positional argument
 declared alongside subcommands — are reported when the command line is parsed.
 
 A handler returns an error and `Run` turns it into an exit code: 0 for success
@@ -74,26 +74,26 @@ path it was reached by, and anything after a `--` terminator. A command is
 usually mounted by whoever composes the binary rather than by the team that
 wrote it, so its own path is not something it can know until it runs.
 
-It also says where each flag's value came from, which the bound variable
-cannot: a flag nobody named holds its default, and a flag named with that same
-value looks identical afterwards. `inv.IsSet("output")` is the yes-or-no form,
-and `inv.Source("output")` names the source — `SourceArgs`, `SourceEnv` or
-`SourceDefault`, in the precedence the parser applies them.
-
-A program that keeps its declarations in variables asks them instead, and needs
-no name — which also settles the case the name form cannot, where two sibling
-commands both declare `--force`:
+A flag also says where its value came from, which the value alone cannot: a
+flag nobody named holds its default, and a flag named with that same value
+looks identical afterwards. `State()` returns the half of a flag a handler
+reads — `Value()`, `IsSet()`, and `Source()`, which is `SourceArgs`,
+`SourceEnv` or `SourceDefault` in the precedence the parser applies them:
 
 ```go
-var outputFlag = climux.String(&output, "output", "Output format")
+var output = climux.String("output", "Output format").Default("table").State()
 
 func Deploy(ctx context.Context, inv *climux.Invocation) error {
-	if template != "" && !outputFlag.IsSetIn(inv) {
-		output = "go-template" // --template picks the format nobody asked for
+	format := output.Value()
+	if template.Value() != "" && !output.IsSet() {
+		format = "go-template" // --template picks the format nobody asked for
 	}
 	...
 }
 ```
+
+A state answers for its own declaration and no other, so two sibling commands
+may both declare `--force` without either answering for the other.
 
 `Command.Middleware` wraps a command's handler, and every handler beneath it,
 in a function of your own — an authorization check, a timing trace, opening a

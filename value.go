@@ -45,37 +45,28 @@ type VarType[T any] interface {
 	Kind() ir.Kind
 }
 
-// value adapts a VarType and the variable it writes to ir.Value, which
-// is what the parser calls.
-type value[T any] struct {
-	p *T
-	t VarType[T]
-
-	// named records that the flag has been named once, so that the
-	// first naming finds the zero T rather than the default.
-	named bool
-}
-
-// reset forgets any naming, so the next is again the first. It writes
-// nothing.
-func (v *value[T]) reset() { v.named = false }
+// value adapts a FlagState to ir.Value, which is what the parser calls:
+// Set hands the flag's variable to its VarType.
+type value[T any] struct{ s *FlagState[T] }
 
 // Set zeroes the variable on the flag's first naming and decodes s into
-// it.
-func (v *value[T]) Set(s string) error {
-	if !v.named {
+// it. The parser records the naming after Set returns, so a zero Count
+// here means this is the first, and the default the variable may hold
+// is discarded before the type sees it.
+func (v value[T]) Set(s string) error {
+	st := v.s
+	if st.shared.Count == 0 {
 		var zero T
-		*v.p = zero
-		v.named = true
+		*st.p = zero
 	}
-	return v.t.Decode(v.p, s)
+	return st.owner.t.Decode(st.p, s)
 }
 
 // Kind and IsBoolFlag answer for the type. See VarType.
-func (v *value[T]) Kind() ir.Kind { return v.t.Kind() }
+func (v value[T]) Kind() ir.Kind { return v.s.owner.t.Kind() }
 
-func (v *value[T]) IsBoolFlag() bool {
-	b, ok := v.t.(interface{ IsBoolFlag() bool })
+func (v value[T]) IsBoolFlag() bool {
+	b, ok := v.s.owner.t.(interface{ IsBoolFlag() bool })
 	return ok && b.IsBoolFlag()
 }
 

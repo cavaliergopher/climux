@@ -14,22 +14,22 @@ import (
 // store, so it declares middleware.Audit like the other mutating
 // commands; "config get" does not.
 func setCommand() *climux.Command {
-	var key, value string
+	key := climux.String("KEY", "Configuration key to set").
+		Positional().
+		Required().
+		Validate(validKey).
+		State()
+	value := climux.String("VALUE", "New value").
+		Positional().
+		Required().
+		State()
 	return climux.NewCommand("set", "Set a configuration key to a value").
 		Middleware(middleware.Audit).
-		Flags(
-			climux.String(&key, "KEY", "Configuration key to set").
-				Positional().
-				Required().
-				Validate(validKey),
-			climux.String(&value, "VALUE", "New value").
-				Positional().
-				Required(),
-		).
+		Flags(key, value).
 		HandleFunc(
 			func(ctx context.Context, inv *climux.Invocation) error {
-				store[key] = value
-				fmt.Fprintf(inv.Stdout, "%s = %s\n", key, value)
+				store[key.Value()] = value.Value()
+				fmt.Fprintf(inv.Stdout, "%s = %s\n", key.Value(), value.Value())
 				return nil
 			},
 		)

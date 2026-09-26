@@ -1,6 +1,12 @@
 # Handlers receive the invocation
 
-Status: accepted, 2026-08-23.
+Status: accepted, 2026-08-23. Revised 2026-09-25 by
+docs/adr/a-flag-holds-its-own-value.md, under which the invocation carries the
+command and the streams but no record of flags. The signature and the case
+against the context are unchanged; what moves is the distinction drawn below
+against cobra, since climux no longer hands the handler a parse result. It
+hands over the command and the streams, as cobra does, and avoids the getters
+because a flag is a handle of its own.
 
 ## Context
 

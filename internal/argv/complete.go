@@ -22,7 +22,7 @@ import (
 func Complete(cmd *ir.Command, args []string, word string) ([]string, ir.CompDirective) {
 	res := lex(cmd, args)
 
-	sources := make(map[*ir.Flag]ir.Source)
+	resetStates(cmd)
 	for _, instr := range res.instructions {
 		if instr.kind != instSet {
 			continue
@@ -32,12 +32,12 @@ func Complete(cmd *ir.Command, args []string, word string) ([]string, ir.CompDir
 		_ = instr.flag.Set(instr.value)
 		// Recorded even when Set failed, for the same reason: what the
 		// line named is what a CompleteFunc is completing against.
-		sources[instr.flag] = ir.SourceArgs
+		setSource(instr.flag, ir.SourceArgs)
 	}
 
 	// No environment variable is read here, so nothing a CompleteFunc
 	// sees reports ir.SourceEnv: completion answers what has been typed.
-	inv := invocationFor(res.active, nil, sources)
+	inv := invocationFor(res.active, nil)
 
 	cands, dir := completeCandidates(res, res.active.ScopedFlags(), inv, word)
 	return finalizeCandidates(cands, word), dir

@@ -25,7 +25,7 @@ func asInterrupt(cmd *Command) *Command {
 func TestInterruptCommandSkipsAncestorRequiredFlag(t *testing.T) {
 	var tr tracer
 	app := NewCommand("app", "").
-		Flags(String(new(string), "name", "").Required()).
+		Flags(String("name", "").Required()).
 		Subcommands(asInterrupt(NewCommand("version", "").HandleFunc(tr.handler("version", nil))))
 
 	if err := Dispatch(context.Background(), app, WithArgs("version")); err != nil {
@@ -59,7 +59,7 @@ func TestInterruptCommandSkipsMiddleware(t *testing.T) {
 func TestNonInterruptSiblingStillEnforcesRules(t *testing.T) {
 	var tr tracer
 	app := NewCommand("app", "").
-		Flags(String(new(string), "name", "").Required()).
+		Flags(String("name", "").Required()).
 		Middleware(tr.step("root")).
 		Subcommands(
 			asInterrupt(NewCommand("version", "").HandleFunc(tr.handler("version", nil))),
@@ -94,7 +94,7 @@ func TestInterruptCommandAtTheRootReadsItsLine(t *testing.T) {
 	var topics []string
 	var ran bool
 	app := asInterrupt(NewCommand("app", "").
-		Flags(Strings(&topics, "topic", "").Positional()).
+		Flags(Strings("topic", "").Bind(&topics).Positional()).
 		HandleFunc(func(ctx context.Context, inv *Invocation) error {
 			ran = true
 			return nil
@@ -158,7 +158,7 @@ func TestInterruptCommandDeclaresNoSubcommands(t *testing.T) {
 
 	withTopic := NewCommand("app", "").Subcommands(
 		InterruptCommand("help", "", noop).
-			Flags(String(new(string), "TOPIC", "").Positional()))
+			Flags(String("TOPIC", "").Positional()))
 	if _, err := withTopic.Compile(); err != nil {
 		t.Errorf("Compile: unexpected error: %v", err)
 	}

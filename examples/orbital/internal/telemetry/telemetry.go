@@ -25,17 +25,22 @@ type Settings struct {
 	Trace    bool
 }
 
-// FlagGroup returns a new group of flags bound to s.
+// FlagGroup returns a new group of flags bound to s. Bind is what keeps
+// the values in plain fields, so that code reading Settings needs no
+// climux type in its hands.
 func (s *Settings) FlagGroup() *climux.FlagGroup {
 	return climux.NewFlagGroup(
 		"telemetry", "Telemetry options",
-		climux.String(&s.LogLevel, "log-level", "Set the log verbosity").Default("info").
+		climux.String("log-level", "Set the log verbosity").
+			Default("info").
 			Choices("debug", "info", "warn", "error").
 			ShowDefault().
-			Persistent(),
-		climux.Bool(&s.Trace, "trace", "Emit a timing trace for every command").
+			Persistent().
+			Bind(&s.LogLevel),
+		climux.Bool("trace", "Emit a timing trace for every command").
 			Env("ORBITAL_TRACE").
-			Persistent(),
+			Persistent().
+			Bind(&s.Trace),
 	)
 }
 
