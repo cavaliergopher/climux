@@ -309,13 +309,13 @@ func TestParseOperandNoSlot(t *testing.T) {
 
 // TestValidateNArgsSpansThePath asserts that the count rules cover every
 // flag that became active along the descended path: an ancestor's
-// Required flag is still enforced when a subcommand is invoked, and its
-// occurrences accumulate wherever they appear around the subcommand
-// token.
+// Required flag is still enforced when a subcommand is invoked, and a
+// persistent one's occurrences accumulate wherever they appear around the
+// subcommand token.
 func TestValidateNArgsSpansThePath(t *testing.T) {
 	newApp := func(name *string) *Command {
 		return NewCommand("app", "").
-			Flags(String(name, "name", "", "").Required()).
+			Flags(String(name, "name", "", "").Required().Persistent()).
 			Subcommands(NewCommand("sub", ""))
 	}
 
@@ -327,8 +327,8 @@ func TestValidateNArgsSpansThePath(t *testing.T) {
 		t.Errorf("message = %q, want %q", got, want)
 	}
 
-	// A parent flag keeps working after the subcommand token, and giving
-	// it there satisfies the requirement.
+	// A persistent parent flag keeps working after the subcommand token,
+	// and giving it there satisfies the requirement.
 	var name string
 	if _, err := Parse(newApp(&name), "sub", "--name=x"); err != nil {
 		t.Fatal(err)

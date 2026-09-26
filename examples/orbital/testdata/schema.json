@@ -13,6 +13,7 @@
           {
             "name": "help",
             "usage": "Show this help message and exit",
+            "persistent": true,
             "maxCount": 1,
             "options": [
               {
@@ -38,6 +39,7 @@
             "valueName": "ACTOR",
             "kind": "string",
             "usage": "Identity performing this action, recorded for the audit trail",
+            "persistent": true,
             "minCount": 1,
             "maxCount": 1,
             "envVar": "ORBITAL_ACTOR",
@@ -53,6 +55,7 @@
             "valueName": "FILE",
             "kind": "string",
             "usage": "Write command output to FILE instead of stdout",
+            "persistent": true,
             "maxCount": 1,
             "takesValue": true,
             "options": [
@@ -73,6 +76,7 @@
             "kind": "string",
             "usage": "Address the legacy metrics sidecar listens on (superseded by --trace)",
             "default": ":9090",
+            "persistent": true,
             "maxCount": 1,
             "takesValue": true,
             "options": [
@@ -94,6 +98,7 @@
             "usage": "Set the log verbosity",
             "default": "info",
             "showDefault": true,
+            "persistent": true,
             "maxCount": 1,
             "choices": [
               "debug",
@@ -113,6 +118,7 @@
             "kind": "bool",
             "usage": "Emit a timing trace for every command",
             "default": "false",
+            "persistent": true,
             "maxCount": 1,
             "envVar": "ORBITAL_TRACE",
             "options": [

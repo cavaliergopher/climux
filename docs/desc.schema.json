@@ -107,6 +107,10 @@
           "type": "boolean",
           "description": "The flag is omitted from help output."
         },
+        "persistent": {
+          "type": "boolean",
+          "description": "The flag may be written beneath the command that declares it, after any of its subcommands is named. Any other flag is valid only until a subcommand is named."
+        },
         "minCount": {
           "type": "integer",
           "minimum": 0

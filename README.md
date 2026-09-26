@@ -161,8 +161,9 @@ var App = climux.NewCommand("orbital", "Operate the fleet").
 	VersionCommand(version)  // orbital version
 ```
 
-Add them to the root and every command below answers to them too, each
-printing its own help. They read nothing else on the line and check nothing,
+Add them to the root. The help flag is persistent, so every command below
+answers to it too, each printing its own help; `--version` answers on the
+root alone. They read nothing else on the line and check nothing,
 so they answer a half-typed command as well.
 
 Declaring them first is a convention, not a rule — it heads the list of
@@ -203,8 +204,10 @@ program without its user typing a terminator.
 
 An argument beginning with `-` is never taken as a detached value, so
 `--count -5` is a missing value rather than negative five; write
-`--count=-5`. Flags may appear among the operands in any order, and a flag
-is legal from the point its own command is named onward.
+`--count=-5`. Flags may appear among the operands in any order. A flag is
+legal from the point its own command is named until the line names a
+subcommand; mark it `Persistent` and it stays legal beneath its command,
+meaning the same thing there.
 
 Every boolean also answers to `--no-flag`, for each of its long names,
 which sets it false. Nothing declares it and nothing can switch it off: it

@@ -161,8 +161,9 @@ both spellings of it from the one string a build stamps into a constant:
 		VersionFlag(version).    // --version
 		VersionCommand(version)  // orbital version
 
-Add the flags to the root and every command below answers to them too,
-each printing its own help. Nothing else on the command line is read or
+Add the flags to the root. The help flag is persistent, so every command
+below answers to it too, each printing its own help; --version answers on
+the root alone. Nothing else on the command line is read or
 checked, so they answer a half-typed command line as well.
 
 Declaring them first is a convention rather than a rule: it puts them at
@@ -317,6 +318,14 @@ of the command
 
 where * is a Unix shell wildcard, would change if there were a file called
 0, false, and so on.
+
+A flag is valid from its own command's name until the command line names
+a subcommand, and unknown after that. One marked Persistent stays valid
+beneath its command and means the same thing there, which is what a flag
+every command honors, such as --help, wants:
+
+	git remote --verbose add   // either kind
+	git remote add --verbose   // persistent only
 
 An attached value is taken literally, so it may look like a flag: --flag=-5
 is negative five, where --flag -5 is a missing value. See

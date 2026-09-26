@@ -3,6 +3,7 @@ package ir
 import (
 	"context"
 	"io"
+	"slices"
 
 	"go.hotsrc.dev/climux/desc"
 )
@@ -55,11 +56,11 @@ type Invocation struct {
 // command on that path declares one. name is a flag's declared name,
 // undecorated by any dialect: "force" rather than "--force".
 //
-// A name may not repeat along a path, so the flag it finds is the only
-// flag that name could mean here; see docs/adr/flags-are-local-by-default.md.
-// A name is not unique across the whole tree, though, so a program
-// holding the declaration itself should ask Resolve instead, which cannot
-// answer about a flag of the same name in another subtree.
+// A descendant may reuse the name of an ancestor's local flag, and then
+// the nearest declaration is the one found, starting from Cmd; see
+// docs/adr/flags-are-local-by-default.md. A program holding the
+// declaration itself should ask Resolve instead, which cannot confuse two
+// flags of the same name.
 func (inv *Invocation) Lookup(name string) *Flag {
 	return inv.find(func(f *Flag) bool { return f.Name == name })
 }
@@ -76,12 +77,15 @@ func (inv *Invocation) Resolve(o Origin) *Flag {
 }
 
 // find returns the first flag in scope for the invocation that match
-// accepts, or nil. Scope is every command from the root of the tree down
-// to Cmd, in that order, and each command's flag groups in the order it
-// carries them, which is the order everything else reads a command's
-// flags in.
+// accepts, or nil. Scope is every command from Cmd up to the root of the
+// tree, in that order, so a nearer declaration is found before a farther
+// one, and each command's flag groups in the order it carries them.
+//
+// Scope here is every flag a handler may read, which is wider than what
+// the command line may write at Cmd: an ancestor's local flag was written
+// before the line dispatched, and its value still stands.
 func (inv *Invocation) find(match func(*Flag) bool) *Flag {
-	for _, cmd := range inv.Cmd.Ancestry {
+	for _, cmd := range slices.Backward(inv.Cmd.Ancestry) {
 		for _, group := range cmd.FlagGroups {
 			for _, f := range group.Flags {
 				if match(f) {
@@ -212,10 +216,9 @@ type Command struct {
 	Subcommands []*Command
 
 	// Ancestry is every command from the root of the tree down to and
-	// including this one, which is the commands whose flags are in scope
-	// here: a flag is usable from the point its own command is named
-	// onward, so what this command accepts is the union of theirs. See
-	// docs/adr/flags-are-local-by-default.md.
+	// including this one, which is the commands whose flags this command's
+	// handler may read. Which of them the command line may write here is
+	// narrower; see ScopedFlags.
 	//
 	// Compile builds it top down while lowering, so nothing reading a
 	// compiled tree has to walk back up to reconstruct it. It is
@@ -250,6 +253,41 @@ type Command struct {
 	UsageFunc UsageFunc
 }
 
+// ScopedFlags returns the flags the command line may write once it has
+// reached c: every persistent flag of c's ancestors, from the root down,
+// then c's own flags, positional arguments included. An ancestor's other
+// flags were valid only until the line dispatched below it. See
+// docs/adr/flags-are-local-by-default.md.
+//
+// A flag group mounted from a Registry at two depths of one path lowers
+// to a flag at each, sharing an Origin. Only the deepest is returned,
+// since it is the one the command line reaches here.
+func (c *Command) ScopedFlags() []*Flag {
+	var flags []*Flag
+	for _, cmd := range c.Ancestry {
+		for _, group := range cmd.FlagGroups {
+			for _, f := range group.Flags {
+				if cmd == c || f.Persistent {
+					flags = append(flags, f)
+				}
+			}
+		}
+	}
+	// Walked from the deepest, so the flag kept for a shared Origin is the
+	// last one the loop above appended.
+	seen := make(map[Origin]bool)
+	kept := flags[:0:0]
+	for _, f := range slices.Backward(flags) {
+		if f.Origin != 0 && seen[f.Origin] {
+			continue
+		}
+		seen[f.Origin] = true
+		kept = append(kept, f)
+	}
+	slices.Reverse(kept)
+	return kept
+}
+
 // String returns the command's own name, unqualified by its ancestry. See
 // FullName for the full path from the root.
 func (c *Command) String() string { return c.Name }
@@ -280,9 +318,9 @@ func (c *Command) Usage(w io.Writer) error {
 // carries nothing to describe and is absent from the result.
 //
 // The document a program publishes should be rooted at c.Root. Describing
-// a subtree is legal but understates what it accepts: a flag is in scope
-// for a command from the point its own command is named onward, so a
-// command's ancestors hold flags it accepts that are not beneath it here.
+// a subtree is legal but understates what it accepts: an ancestor's
+// persistent flags are valid beneath it, so a command's ancestors hold
+// flags it accepts that are not beneath it here.
 func (c *Command) Describe() *desc.Command {
 	cmd := &desc.Command{
 		Name:        c.Name,

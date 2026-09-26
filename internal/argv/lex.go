@@ -1,6 +1,7 @@
 package argv
 
 import (
+	"slices"
 	"unicode/utf8"
 
 	"go.hotsrc.dev/climux/ir"
@@ -100,7 +101,7 @@ type lexResult struct {
 // command line with several mistakes reports all of them -- though today
 // apply only ever surfaces the first, see apply's doc comment.
 func lex(root *ir.Command, argv []string) lexResult {
-	lx := &lexer{argv: argv}
+	lx := &lexer{argv: argv, depth: len(root.Ancestry) - 1}
 	lx.enterCommand(root)
 	for lx.pos < len(lx.argv) {
 		lx.lexOne()
@@ -119,16 +120,20 @@ func lex(root *ir.Command, argv []string) lexResult {
 	}
 }
 
-// lexer holds lex's working state. optionsByName accumulates across a
-// descent rather than being rebuilt at each command: a name declared by an
-// ancestor stays matchable after its subcommand is named, which is what
-// lets a parent's flag still bind once the command line has moved past the
-// token that named the subcommand. positionals and subcommandsByName, by
-// contrast, are rebuilt fresh on every descent, since only the current
-// command's own positionals and subcommands are ever legal there.
+// lexer holds lex's working state. optionsByName, positionals and
+// subcommandsByName are rebuilt on every descent from what the command
+// descended into accepts: its own flags and subcommands, and its
+// ancestors' persistent flags. An ancestor's local flag was valid only
+// until the line dispatched, so it stops matching there; see
+// ir.Command.ScopedFlags.
 type lexer struct {
 	argv []string
 	pos  int // index of the next unread argument in argv
+
+	// depth is where in every Ancestry the command lex was called on sits.
+	// Nothing above it was ever named on this line, so none of its flags
+	// are matchable, persistent or not.
+	depth int
 
 	cmd               *ir.Command
 	optionsByName     map[string]resolvedOption
@@ -153,24 +158,31 @@ type lexer struct {
 	errs         []error
 }
 
-// enterCommand descends the lexer into cmd, growing the option table with
-// cmd's own flags and replacing the positional and subcommand tables with
-// cmd's. A positional flag never enters the option table, so it cannot be
-// set as if it were one.
+// enterCommand descends the lexer into cmd, replacing the option,
+// positional and subcommand tables with what cmd accepts. A positional
+// flag never enters the option table, so it cannot be set as if it were
+// one.
 func (lx *lexer) enterCommand(cmd *ir.Command) {
 	lx.cmd = cmd
-	if lx.optionsByName == nil {
-		lx.optionsByName = make(map[string]resolvedOption)
-	}
+	lx.optionsByName = make(map[string]resolvedOption)
 	lx.positionals = nil
-	for _, group := range cmd.FlagGroups {
-		for _, f := range group.Flags {
-			if f.Positional {
-				lx.positionals = append(lx.positionals, f)
-				continue
+	above := make(map[*ir.Flag]bool)
+	for _, anc := range cmd.Ancestry[:lx.depth] {
+		for _, group := range anc.FlagGroups {
+			for _, f := range group.Flags {
+				above[f] = true
 			}
-			resolvedOptionsInto(lx.optionsByName, f)
 		}
+	}
+	for _, f := range cmd.ScopedFlags() {
+		if above[f] {
+			continue
+		}
+		if f.Positional {
+			lx.positionals = append(lx.positionals, f)
+			continue
+		}
+		resolvedOptionsInto(lx.optionsByName, f)
 	}
 	lx.posCount = 0
 	lx.posBound = false
@@ -369,12 +381,18 @@ func (lx *lexer) lexShortOptions(arg string, idx int) {
 	}
 }
 
-// unrecognizedOption records an option that resolved to nothing. A name
-// declared deeper in the tree becomes legal only after its own command is
-// named, so when a command below the current one declares it, the message
-// says which rather than leaving the user to guess; see
-// docs/adr/flags-are-local-by-default.md.
+// unrecognizedOption records an option that resolved to nothing. A local
+// flag is legal only between its own command's name and the next
+// subcommand, so when an ancestor or a command below the current one
+// declares the name, the message says which rather than leaving the user
+// to guess; see docs/adr/flags-are-local-by-default.md.
 func (lx *lexer) unrecognizedOption(name string) {
+	if anc := findAncestorWithFlag(lx.cmd.Ancestry[lx.depth:], name); anc != nil {
+		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, nil, name,
+			"unrecognized option: %s (an option of %q)",
+			name, anc.FullName))
+		return
+	}
 	if sub := findDescendantWithFlag(lx.cmd, name); sub != nil {
 		lx.errs = append(lx.errs, ir.NewArgumentErrorf(nil, lx.cmd, nil, name,
 			"unrecognized option: %s (defined by subcommand %q)",
@@ -470,6 +488,25 @@ func (lx *lexer) emitUnbound(f *ir.Flag, name string, attached bool) {
 	if f.EndOfOptions {
 		lx.optionsEnded = true
 	}
+}
+
+// findAncestorWithFlag returns the nearest command before the last in
+// path with a flag answering to the option -- a "--name" or "-s" -- or nil
+// when none has one. path runs down to the current command. Only a local
+// flag can be found, since a persistent one would have matched. A hidden
+// flag is skipped, for the reason findDescendantWithFlag skips a hidden
+// command.
+func findAncestorWithFlag(path []*ir.Command, option string) *ir.Command {
+	for _, anc := range slices.Backward(path[:len(path)-1]) {
+		for _, group := range anc.FlagGroups {
+			for _, flag := range group.Flags {
+				if !flag.Positional && !flag.Hidden && flag.Claims(option) {
+					return anc
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // findDescendantWithFlag returns the first descendant of cmd to answer to

@@ -56,7 +56,8 @@ var outFile string
 func OutputFlag() *climux.Flag {
 	return climux.String(&outFile, "out", "",
 		"Write command output to FILE instead of stdout").
-		ValueName("file")
+		ValueName("file").
+		Persistent()
 }
 
 // Output sends whatever the handler writes to inv.Stdout to the file

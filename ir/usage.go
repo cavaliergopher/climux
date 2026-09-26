@@ -40,6 +40,11 @@ func Usage(w io.Writer, cmd *Command) error {
 			return err
 		}
 	}
+	for _, group := range inheritedGroups(cmd) {
+		if err := detailFlagGroup(w, group); err != nil {
+			return err
+		}
+	}
 	if err := detailSubcommands(w, cmd.Subcommands); err != nil {
 		return err
 	}
@@ -67,19 +72,42 @@ func getPositionals(cmd *Command) []*Flag {
 	return a
 }
 
-// hasOptions reports whether anything in scope at cmd is an option worth
-// showing, which is what decides the "[OPTIONS]" clause of the usage line.
-// Inherited options count, so this reads the whole ancestry.
-func hasOptions(cmd *Command) bool {
-	for _, c := range cmd.Ancestry {
-		for _, group := range c.FlagGroups {
+// inheritedGroups returns the groups of cmd's ancestors, from the root
+// down, each holding only the flags in scope at cmd, which are its
+// persistent ones. They print after cmd's own groups, under the headings
+// their ancestors gave them, so two groups may share a title.
+func inheritedGroups(cmd *Command) []*FlagGroup {
+	scoped := make(map[*Flag]bool)
+	for _, flag := range cmd.ScopedFlags() {
+		scoped[flag] = true
+	}
+	var groups []*FlagGroup
+	for _, anc := range cmd.Ancestry[:len(cmd.Ancestry)-1] {
+		for _, group := range anc.FlagGroups {
+			inherited := *group
+			inherited.Flags = nil
 			for _, flag := range group.Flags {
-				if flag.Hidden || flag.Positional {
-					continue
+				if scoped[flag] {
+					inherited.Flags = append(inherited.Flags, flag)
 				}
-				return true
+			}
+			if len(inherited.Flags) > 0 {
+				groups = append(groups, &inherited)
 			}
 		}
+	}
+	return groups
+}
+
+// hasOptions reports whether anything in scope at cmd is an option worth
+// showing, which is what decides the "[OPTIONS]" clause of the usage line.
+// An ancestor's persistent options count, since they may be written here.
+func hasOptions(cmd *Command) bool {
+	for _, flag := range cmd.ScopedFlags() {
+		if flag.Hidden || flag.Positional {
+			continue
+		}
+		return true
 	}
 	return false
 }

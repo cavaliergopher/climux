@@ -58,7 +58,8 @@ func main() {
 		Flags(
 			climux.String(&identity.Actor, "actor", "", "Identity performing this action, recorded for the audit trail").
 				Required().
-				Env("ORBITAL_ACTOR"),
+				Env("ORBITAL_ACTOR").
+				Persistent(),
 			middleware.OutputFlag(),
 		).
 		Subcommands(

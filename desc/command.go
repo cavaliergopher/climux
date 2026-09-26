@@ -5,10 +5,9 @@ package desc
 // it.
 //
 // A Command names only the flags declared or mounted on it, not those
-// inherited from an ancestor. A flag is in scope for a command from the
-// point its own command is named onward, so an ancestor's flags are not
-// repeated on each of its descendants; see the machine-readable-schema
-// ADR.
+// inherited from an ancestor. An ancestor's persistent flags are valid
+// beneath it, but are not repeated on each of its descendants; see the
+// machine-readable-schema ADR.
 type Command struct {
 	// Name is the command's own name, unqualified by its ancestry: "add"
 	// rather than "orbital remote add".

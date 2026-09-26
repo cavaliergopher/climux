@@ -557,10 +557,10 @@ func (c *Command) Flags(flags ...*Flag) *Command {
 //
 //	var App = climux.NewCommand("myapp", "My application").HelpFlag()
 //
-// Call it on the root: every command below answers to the flag too, and
-// each prints its own help. It is shorthand for adding HelpFlag with
-// Flags, which is the way to hide it, or to name it something else
-// entirely.
+// Call it on the root: the flag is persistent, so every command below
+// answers to it too, and each prints its own help. It is shorthand for
+// adding HelpFlag with Flags, which is the way to hide it, or to name it
+// something else entirely.
 func (c *Command) HelpFlag(names ...string) *Command {
 	return c.Flags(HelpFlag(names...))
 }

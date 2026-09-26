@@ -181,9 +181,10 @@ func lexPosTree() *ir.Command {
 	}
 }
 
-// lexSubTree returns a root command with its own "name" flag and one
-// subcommand, "sub", with its own "sub-name" flag -- for asserting descent
-// and that a root flag stays matchable once the parser has descended.
+// lexSubTree returns a root command with a local "name" flag and a
+// persistent "global" one, and one subcommand, "sub", with its own
+// "sub-name" flag -- for asserting descent, and which root flags stay
+// matchable once the parser has descended.
 func lexSubTree() *ir.Command {
 	sub := &ir.Command{
 		Name: "sub",
@@ -191,10 +192,12 @@ func lexSubTree() *ir.Command {
 			Flags: []*ir.Flag{valueOpt("sub-name", "s")},
 		}},
 	}
+	global := valueOpt("global")
+	global.Persistent = true
 	root := &ir.Command{
 		Name: "app",
 		FlagGroups: []*ir.FlagGroup{{
-			Flags: []*ir.Flag{valueOpt("name")},
+			Flags: []*ir.Flag{valueOpt("name"), global},
 		}},
 		Subcommands: []*ir.Command{sub},
 	}
@@ -212,6 +215,22 @@ func lexHintTree() *ir.Command {
 	}
 	root := &ir.Command{Name: "app", Subcommands: []*ir.Command{add}}
 	return root
+}
+
+// linked finishes a hand-built tree the way Compile would, setting the
+// fields derived from its shape on c and every command beneath it: the
+// ancestry from the root down, the root, and the full name.
+func linked(c *ir.Command, ancestors ...*ir.Command) *ir.Command {
+	c.Ancestry = append(append([]*ir.Command{}, ancestors...), c)
+	c.Root = c.Ancestry[0]
+	c.FullName = c.Name
+	if len(ancestors) > 0 {
+		c.FullName = ancestors[len(ancestors)-1].FullName + " " + c.Name
+	}
+	for _, sub := range c.Subcommands {
+		linked(sub, c.Ancestry...)
+	}
+	return c
 }
 
 // TestLex is the golden test for lex alone: argv in, the instructions and
@@ -457,11 +476,28 @@ func TestLex(t *testing.T) {
 			nil,
 		},
 		{
-			"AncestorFlagStaysMatchableAfterDescent",
+			"LocalFlagBeforeDispatch",
+			lexSubTree, []string{"--name=before", "sub"},
+			[]lexStep{
+				{kind: instSet, flag: "--name", value: "before", attached: true},
+				{kind: instDispatch, cmd: "sub"},
+			},
+			nil,
+		},
+		{
+			"LocalFlagEndsAtDispatch",
 			lexSubTree, []string{"sub", "--name=after"},
 			[]lexStep{
 				{kind: instDispatch, cmd: "sub"},
-				{kind: instSet, flag: "--name", value: "after", attached: true},
+			},
+			[]string{`unrecognized option: --name (an option of "app")`},
+		},
+		{
+			"PersistentFlagStaysMatchableAfterDescent",
+			lexSubTree, []string{"sub", "--global=after"},
+			[]lexStep{
+				{kind: instDispatch, cmd: "sub"},
+				{kind: instSet, flag: "--global", value: "after", attached: true},
 			},
 			nil,
 		},
@@ -478,7 +514,7 @@ func TestLex(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := tt.build()
+			root := linked(tt.build())
 			res := lex(root, tt.args)
 			assertLexSteps(t, tt.want, summarize(res.instructions))
 			assertLexErrs(t, tt.errs, errMessages(res.errs))
@@ -491,7 +527,7 @@ func TestLex(t *testing.T) {
 // completion engine will need to tell which word on the line it is
 // completing.
 func TestLexArgIndex(t *testing.T) {
-	root := lexOptTree()
+	root := linked(lexOptTree())
 	res := lex(root, []string{"--verbose", "--name", "bar"})
 	if len(res.errs) != 0 {
 		t.Fatalf("unexpected errors: %v", res.errs)
@@ -508,7 +544,7 @@ func TestLexArgIndex(t *testing.T) {
 // still open to receive a value, or nil once every positional is filled --
 // what completion will need to know what a trailing word would bind to.
 func TestLexOpenPositional(t *testing.T) {
-	root := lexPosTree()
+	root := linked(lexPosTree())
 
 	res := lex(root, nil)
 	if res.openPositional == nil || res.openPositional.String() != "BAZ" {
@@ -524,7 +560,7 @@ func TestLexOpenPositional(t *testing.T) {
 // TestLexActiveCommand asserts that lexResult reports the deepest command
 // argv descended into, which is what completion will resume lexing from.
 func TestLexActiveCommand(t *testing.T) {
-	root := lexSubTree()
+	root := linked(lexSubTree())
 	res := lex(root, []string{"sub"})
 	if res.active == nil || res.active.Name != "sub" {
 		t.Errorf("active = %v, want sub", res.active)

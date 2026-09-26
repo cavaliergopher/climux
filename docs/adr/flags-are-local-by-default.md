@@ -1,6 +1,6 @@
 # Flags are local by default
 
-Status: accepted, 2026-09-23. Not yet implemented.
+Status: accepted, 2026-09-23. Implemented 2026-09-25.
 
 ## Context
 
@@ -64,8 +64,9 @@ command. `VersionFlag` declares a local one. A persistent interrupt answers
 for the command whose scope it was written in, so `app sub --help` is help
 for `sub`.
 
-A command's help lists its own flags and its ancestors' persistent flags,
-which is exactly the set it accepts. The description records scope:
+A command's help lists its own flags and then its ancestors' persistent
+flags, each under its own group's heading, which is exactly the set it
+accepts. The description records scope:
 `desc.Flag` carries `persistent`, true for a persistent flag and omitted
 otherwise.
 
@@ -74,9 +75,11 @@ otherwise.
 - Help and parsing agree. A flag is listed wherever it is accepted and
   nowhere else.
 - Programs mark their global flags `.Persistent()`. In orbital that is
-  `--actor`, `--out`, telemetry's `--log-level` and `--trace`, and the
-  legacy group's flags. A flag group decides per flag, so a registry
-  contributing globals marks them.
+  `--actor`, `--out`, and telemetry's `--log-level` and `--trace`. A flag
+  group decides per flag, so a registry contributing globals marks them.
+- A group imported with `FromFlagSet` is persistent. A `flag.FlagSet` is
+  written for a whole program and read wherever it likes, so none of its
+  flags belongs to the command it is mounted on.
 - A persistent flag group mounted at two depths of one path is an error.
   The fix is to mount it once, higher up. A local group may be mounted at
   any depth.

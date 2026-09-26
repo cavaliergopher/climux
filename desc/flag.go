@@ -43,6 +43,11 @@ type Flag struct {
 	// Hidden reports that the flag is omitted from help output.
 	Hidden bool `json:"hidden,omitempty"`
 
+	// Persistent reports that the flag may be written beneath the command
+	// that declares it, after any of its subcommands is named. Any other
+	// flag is valid only until a subcommand is named.
+	Persistent bool `json:"persistent,omitempty"`
+
 	MinCount int `json:"minCount,omitempty"`
 
 	// MaxCount is the most times the flag may be given, or 0 for no

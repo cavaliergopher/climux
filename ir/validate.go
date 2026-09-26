@@ -126,6 +126,11 @@ func validateFlag(f *Flag) error {
 	if f.Handler != nil && f.Positional {
 		fail("positional argument must not interrupt")
 	}
+	// A positional argument is filled before the line dispatches, so no
+	// descendant could ever write it.
+	if f.Persistent && f.Positional {
+		fail("positional argument cannot be persistent")
+	}
 	if f.MinCount < 0 {
 		fail("minimum count must not be negative: %d", f.MinCount)
 	}

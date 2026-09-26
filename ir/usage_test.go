@@ -41,17 +41,27 @@ func compiled(c *Command, ancestors ...*Command) *Command {
 }
 
 func TestPrintUsage(t *testing.T) {
-	// leaf inherits [OPTIONS] from its parent; FullName is set the way
-	// Compile would compute it, parent's FullName plus its own name, since
-	// printUsage reads the field rather than assembling it from ancestry.
+	// leaf inherits [OPTIONS] from its parent's persistent flag, and
+	// localLeaf nothing from its parent's local one; FullName is set the
+	// way Compile would compute it, parent's FullName plus its own name,
+	// since printUsage reads the field rather than assembling it from
+	// ancestry.
 	leaf := &Command{Name: "leaf", FullName: "root leaf"}
 	root := compiled(&Command{
 		Name:        "root",
 		FullName:    "root",
-		FlagGroups:  []*FlagGroup{{Flags: []*Flag{{NamedOptions: []string{"--foo"}}}}},
+		FlagGroups:  []*FlagGroup{{Flags: []*Flag{{NamedOptions: []string{"--foo"}, Persistent: true}}}},
 		Subcommands: []*Command{leaf},
 	})
 	compiled(leaf, root)
+	localLeaf := &Command{Name: "leaf", FullName: "root leaf"}
+	localRoot := compiled(&Command{
+		Name:        "root",
+		FullName:    "root",
+		FlagGroups:  []*FlagGroup{{Flags: []*Flag{{NamedOptions: []string{"--foo"}}}}},
+		Subcommands: []*Command{localLeaf},
+	})
+	compiled(localLeaf, localRoot)
 
 	tests := []struct {
 		name string
@@ -76,6 +86,11 @@ func TestPrintUsage(t *testing.T) {
 			name: "OptionsInherited",
 			cmd:  leaf,
 			want: "Usage: root leaf [OPTIONS]\n",
+		},
+		{
+			name: "LocalOptionsNotInherited",
+			cmd:  localLeaf,
+			want: "Usage: root leaf\n",
 		},
 		{
 			name: "Subcommands",

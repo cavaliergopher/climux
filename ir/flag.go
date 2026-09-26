@@ -134,7 +134,13 @@ type Flag struct {
 	// if the user had typed "--" after it.
 	EndOfOptions bool
 
-	Hidden   bool
+	Hidden bool
+
+	// Persistent reports that the flag stays valid beneath the command
+	// that declares it. Any other flag is valid only until the command
+	// line dispatches to a subcommand; see Command.ScopedFlags.
+	Persistent bool
+
 	MinCount int
 	MaxCount int
 	EnvVar   string
@@ -238,6 +244,7 @@ func (f *Flag) Describe() *desc.Flag {
 		Positional:   f.Positional,
 		EndOfOptions: f.EndOfOptions,
 		Hidden:       f.Hidden,
+		Persistent:   f.Persistent,
 		MinCount:     f.MinCount,
 		MaxCount:     f.MaxCount,
 		EnvVar:       f.EnvVar,

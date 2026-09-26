@@ -37,11 +37,13 @@ type claimant struct {
 }
 
 // validateTree checks c and, recursively, each of its subcommands.
-// claimed maps each option spelling claimed by c's ancestors to who
-// claimed it: a name may not repeat anywhere along an ancestor-descendant
-// chain, and the check runs here because a command cannot know its
-// ancestors until the whole tree is in view. See
-// docs/adr/flags-are-local-by-default.md.
+// claimed maps each option spelling claimed by c's ancestors' persistent
+// flags to who claimed it. A name must be unique among the flags writable
+// at any one position, and a persistent flag is writable everywhere
+// beneath its command, so no descendant may reuse its names; a local
+// flag's names are free again once the line dispatches. The check runs
+// here because a command cannot know its ancestors until the whole tree
+// is in view. See docs/adr/flags-are-local-by-default.md.
 func validateTree(c *ir.Command, claimed map[string]claimant) error {
 	var errs []error
 	if err := validateSelf(c, claimed); err != nil {
@@ -67,6 +69,9 @@ func validateTree(c *ir.Command, claimed map[string]claimant) error {
 			continue
 		}
 		for _, flag := range group.Flags {
+			if !flag.Persistent {
+				continue
+			}
 			for option := range flag.ClaimedOptions {
 				claims[option] = claimant{cmd: c, flag: flag}
 			}

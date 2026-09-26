@@ -48,6 +48,7 @@ type Flag struct {
 	minCount     int
 	maxCount     int
 	hidden       bool
+	persistent   bool
 	envVar       string
 	choices      []string
 	validateFunc ir.ValidateFunc
@@ -254,14 +255,17 @@ func Unbound(name, usage string) *Flag {
 //
 //	NewCommand("ssh", "").Flags(HelpFlag("help"))
 //
-// Mount it like any other flag. Command.HelpFlag is the shorthand.
+// It is persistent, so mounted on the root it answers under every
+// command, and prints the help of whichever command it was written
+// after. Mount it like any other flag. Command.HelpFlag is the shorthand.
 func HelpFlag(names ...string) *Flag {
 	if len(names) == 0 {
 		names = []string{"help", "h"}
 	}
 	return Unbound(canonicalName(names), "Show this help message and exit").
 		Aliases(names[1:]...).
-		Interrupt(printHelp)
+		Interrupt(printHelp).
+		Persistent()
 }
 
 // VersionFlag returns the interrupt that prints version, alongside the
@@ -293,8 +297,8 @@ func printHelp(ctx context.Context, inv *Invocation) error {
 // and VersionCommand both run.
 //
 // The program's name comes from the root of the tree rather than from
-// the command that was named, so "orbital deploy --version" reports
-// orbital's version, whichever command the flag was given after. The
+// the command that was named, so a version flag made persistent reports
+// orbital's version from "orbital deploy --version" too. The
 // program supplies only the version itself, which is what a build stamps
 // into a constant.
 func printVersion(version string) HandlerFunc {
@@ -429,6 +433,16 @@ func (c *Flag) Hidden() *Flag {
 	return c
 }
 
+// Persistent keeps the flag valid beneath the command that declares it:
+// it may be written after any of that command's subcommands is named, and
+// means the same thing there. Otherwise a flag is valid only until the
+// command line names a subcommand. A positional argument cannot be
+// persistent.
+func (c *Flag) Persistent() *Flag {
+	c.persistent = true
+	return c
+}
+
 // Env allows the value of the flag to be specified with an environment
 // variable if it is not specified on the command line.
 func (c *Flag) Env(name string) *Flag {
@@ -542,6 +556,7 @@ func (c *Flag) lower(errs *[]error) *ir.Flag {
 		Positional:     c.positional,
 		EndOfOptions:   c.endOfOptions,
 		Hidden:         c.hidden,
+		Persistent:     c.persistent,
 		MinCount:       c.minCount,
 		MaxCount:       c.maxCount,
 		EnvVar:         c.envVar,
@@ -625,6 +640,10 @@ func (c *FlagGroup) Flags(flags ...*Flag) *FlagGroup {
 // The flag set is read once, here: a flag declared on fs afterwards is not
 // seen. Parsing and error handling are this package's from then on.
 //
+// Every flag is persistent. A flag set is written for a whole program, and
+// its flags are read wherever the program likes, so none belongs to the
+// one command it happens to be mounted on.
+//
 // A flag whose Value implements flag.Getter is described as precisely as
 // a native one: its Kind is recovered from the concrete type Get
 // returns, and is ir.KindOpaque for a Value that does not implement
@@ -636,7 +655,7 @@ func FromFlagSet(name, title string, fs *flag.FlagSet) *FlagGroup {
 		flg := Var(f.Value, f.Name, f.Usage)
 		flg.defValue = f.DefValue
 		flg.kind = kindFromFlagValue(f.Value)
-		group.Flags(flg)
+		group.Flags(flg.Persistent())
 	})
 	return group
 }

@@ -31,9 +31,11 @@ func (s *Settings) FlagGroup() *climux.FlagGroup {
 		"telemetry", "Telemetry options",
 		climux.String(&s.LogLevel, "log-level", "info", "Set the log verbosity").
 			Choices("debug", "info", "warn", "error").
-			ShowDefault(),
+			ShowDefault().
+			Persistent(),
 		climux.Bool(&s.Trace, "trace", false, "Emit a timing trace for every command").
-			Env("ORBITAL_TRACE"),
+			Env("ORBITAL_TRACE").
+			Persistent(),
 	)
 }
 

@@ -177,6 +177,22 @@ func TestFromFlagSet(t *testing.T) {
 	assertBool(t, true, qux)
 }
 
+// TestFromFlagSetIsPersistent asserts that an imported flag stays valid
+// beneath the command it is mounted on, since a flag set is written for a
+// whole program rather than for one command.
+func TestFromFlagSetIsPersistent(t *testing.T) {
+	var foo string
+	flagSet := flag.NewFlagSet("native", flag.ContinueOnError)
+	flagSet.StringVar(&foo, "foo", "", "")
+	c := NewCommand("test", "").
+		FlagGroups(FromFlagSet("native", "Native options", flagSet)).
+		Subcommands(NewCommand("sub", ""))
+	if _, err := Parse(c, "sub", "--foo", "foo"); err != nil {
+		t.Fatal(err)
+	}
+	assertString(t, "foo", foo)
+}
+
 // opaqueFlagValue implements flag.Value but not flag.Getter, the way a
 // hand-written stdlib flag often does, so FromFlagSet has no concrete
 // type to recover a narrower Kind from.
@@ -434,10 +450,11 @@ func ExampleCommand_Subcommands() {
 			return nil
 		})
 
-	// configure the main command with two subcommands and a global "n" flag.
+	// configure the main command with two subcommands and a persistent
+	// "n" flag, so it can be given after either of them.
 	cmd := NewCommand("widgets", "").
 		HelpFlag().
-		Flags(Int(&n, "n", 1, "Affect n widgets")).
+		Flags(Int(&n, "n", 1, "Affect n widgets").Persistent()).
 		Subcommands(create, destroy)
 
 	ctx := context.Background()
@@ -709,10 +726,10 @@ func TestConfigErrorNamesGrandchildByPath(t *testing.T) {
 	}
 }
 
-// TestValidateAncestorShadowing asserts the path-scoped naming rule: one
-// option may not be claimed twice along an ancestor-descendant chain, by
-// either spelling, however far up the path the ancestor is. See
-// docs/adr/flags-are-local-by-default.md.
+// TestValidateAncestorShadowing asserts that a persistent flag's options
+// may not be claimed again beneath it, by either spelling, however far up
+// the path the ancestor is: both would be writable after the descendant is
+// named. See docs/adr/flags-are-local-by-default.md.
 //
 // The error names both commands, since ancestry is what tells a reader
 // which end to change, and neither is called the offender: which was
@@ -728,7 +745,7 @@ func TestValidateAncestorShadowing(t *testing.T) {
 		{
 			name: "LongName",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "force", false, "")).
+				Flags(Bool(new(bool), "force", false, "").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
 					Bool(new(bool), "force", false, ""),
 				)),
@@ -737,7 +754,7 @@ func TestValidateAncestorShadowing(t *testing.T) {
 		{
 			name: "ShortName",
 			cmd: NewCommand("root", "").
-				Flags(String(new(string), "file", "", "").Aliases("f")).
+				Flags(String(new(string), "file", "", "").Aliases("f").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
 					String(new(string), "output", "", "").Aliases("f"),
 				)),
@@ -746,7 +763,7 @@ func TestValidateAncestorShadowing(t *testing.T) {
 		{
 			name: "GrandparentClaim",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "force", false, "")).
+				Flags(Bool(new(bool), "force", false, "").Persistent()).
 				Subcommands(NewCommand("mid", "").Subcommands(
 					NewCommand("leaf", "").Flags(
 						Bool(new(bool), "force", false, ""),
@@ -767,8 +784,7 @@ func TestValidateAncestorShadowing(t *testing.T) {
 	}
 }
 
-// TestSiblingFlagReuse asserts the freedom the path-scoped rule buys:
-// commands in different subtrees may declare the same names, and each
+// TestSiblingFlagReuse asserts that commands in different subtrees may declare the same names, and each
 // spelling binds the variable of whichever sibling was invoked.
 func TestSiblingFlagReuse(t *testing.T) {
 	var deleteForce, pushForce bool
@@ -799,6 +815,153 @@ func TestSiblingFlagReuse(t *testing.T) {
 		t.Errorf("Cmd = %q, want %q", got, want)
 	}
 	assertBool(t, true, pushForce)
+}
+
+// newRemoteTree returns git's "remote" shape: a command with a handler of
+// its own and an "add" subcommand, each declaring a --verbose of its own.
+// remote's is persistent when persistent is set, and add's is omitted
+// then, since the name would collide.
+func newRemoteTree(remoteVerbose, addVerbose *bool, persistent bool) *Command {
+	verbose := Bool(remoteVerbose, "verbose", false, "")
+	add := NewCommand("add", "")
+	if persistent {
+		verbose.Persistent()
+	} else {
+		add.Flags(Bool(addVerbose, "verbose", false, ""))
+	}
+	return NewCommand("git", "").Subcommands(
+		NewCommand("remote", "").Flags(verbose).Subcommands(add),
+	)
+}
+
+// TestLocalFlagScope asserts that a local flag is valid from its own
+// command's name until the line dispatches, and unknown after that, while
+// a persistent one stays valid beneath its command. See
+// docs/adr/flags-are-local-by-default.md.
+func TestLocalFlagScope(t *testing.T) {
+	t.Run("WrittenBeforeDispatch", func(t *testing.T) {
+		var remoteVerbose, addVerbose bool
+		inv, err := Parse(newRemoteTree(&remoteVerbose, &addVerbose, false),
+			"remote", "--verbose", "add")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := inv.Cmd.Name, "add"; got != want {
+			t.Errorf("Cmd = %q, want %q", got, want)
+		}
+		assertBool(t, true, remoteVerbose)
+		assertBool(t, false, addVerbose)
+	})
+
+	t.Run("ShadowedAfterDispatch", func(t *testing.T) {
+		var remoteVerbose, addVerbose bool
+		inv, err := Parse(newRemoteTree(&remoteVerbose, &addVerbose, false),
+			"remote", "--verbose", "add", "--verbose")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertBool(t, true, remoteVerbose)
+		assertBool(t, true, addVerbose)
+		// The nearest declaration answers for a reused name.
+		if got, want := inv.Lookup("verbose").Origin, inv.Cmd.FlagGroups[0].Flags[0].Origin; got != want {
+			t.Errorf("Lookup found remote's --verbose, want add's")
+		}
+	})
+
+	t.Run("UnknownAfterDispatch", func(t *testing.T) {
+		tree := NewCommand("git", "").Subcommands(
+			NewCommand("remote", "").
+				Flags(Bool(new(bool), "verbose", false, "")).
+				Subcommands(NewCommand("add", "")),
+		)
+		_, err := Parse(tree, "remote", "add", "--verbose")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if got, want := humanMessage(err),
+			`unrecognized option: --verbose (an option of "git remote")`; got != want {
+			t.Errorf("message = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("PersistentAfterDispatch", func(t *testing.T) {
+		var remoteVerbose bool
+		if _, err := Parse(newRemoteTree(&remoteVerbose, nil, true),
+			"remote", "add", "--verbose"); err != nil {
+			t.Fatal(err)
+		}
+		assertBool(t, true, remoteVerbose)
+	})
+
+	// A word naming a subcommand is data while the command's positionals
+	// are still filling, so the line has not dispatched and the command's
+	// local flags stay valid.
+	t.Run("PositionalDoesNotDispatch", func(t *testing.T) {
+		var files []string
+		var verbose bool
+		app := NewCommand("app", "").
+			Flags(
+				Strings(&files, "file", nil, "").Positional(),
+				Bool(&verbose, "verbose", false, ""),
+			).
+			Subcommands(NewCommand("run", ""))
+		inv, err := Parse(app, "x", "run", "--verbose")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := inv.Cmd.Name, "app"; got != want {
+			t.Errorf("Cmd = %q, want %q", got, want)
+		}
+		assertStrings(t, []string{"x", "run"}, files)
+		assertBool(t, true, verbose)
+	})
+}
+
+// TestPersistentPositional asserts that a positional argument cannot be
+// persistent: it is filled before the line dispatches, so no descendant
+// could write it.
+func TestPersistentPositional(t *testing.T) {
+	app := NewCommand("app", "").
+		Flags(String(new(string), "file", "", "").Positional().Persistent())
+	_, err := Parse(app)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got, want := err.Error(), "positional argument cannot be persistent"; !strings.Contains(got, want) {
+		t.Errorf("error = %q, want it to contain %q", got, want)
+	}
+}
+
+// TestHelpListsPersistentAncestorFlags asserts that a subcommand's help
+// lists its ancestors' persistent flags after its own, under their own
+// groups' headings, and none of their local ones, which is exactly what
+// it accepts.
+func TestHelpListsPersistentAncestorFlags(t *testing.T) {
+	app := NewCommand("app", "").
+		HelpFlag().
+		Flags(
+			Bool(new(bool), "local", false, "Only for app"),
+			Bool(new(bool), "global", false, "Everywhere").Persistent(),
+		).
+		Subcommands(NewCommand("sub", "").
+			Flags(Bool(new(bool), "own", false, "Only for sub")))
+
+	code, stdout, stderr := runCaptured(app, "sub", "--help")
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr)
+	}
+	want := `Usage: app sub [OPTIONS]
+
+Options:
+   --own  Only for sub
+
+Options:
+  -h, --help    Show this help message and exit
+      --global  Everywhere
+`
+	if got := stdout; got != want {
+		t.Errorf("help =\n%s\nwant:\n%s", got, want)
+	}
 }
 
 // TestFirstOperandDecides asserts how a command that declares both
@@ -1849,8 +2012,9 @@ func TestParseReportsHelpAsAnInterrupt(t *testing.T) {
 
 // TestInterruptRunsInPlaceOfTheHandler asserts that naming an interrupt
 // runs it rather than the command the arguments reached, and that the
-// invocation it is given names that command -- an interrupt reports on
-// whichever command was named, not on the one that declared it.
+// invocation it is given names that command -- a persistent interrupt
+// reports on whichever command it was written after, not on the one that
+// declared it.
 func TestInterruptRunsInPlaceOfTheHandler(t *testing.T) {
 	var ran string
 	sub := NewCommand("sub", "").
@@ -1862,7 +2026,7 @@ func TestInterruptRunsInPlaceOfTheHandler(t *testing.T) {
 		Flags(Unbound("where", "").Interrupt(func(ctx context.Context, inv *Invocation) error {
 			ran = inv.Cmd.FullName
 			return nil
-		})).
+		}).Persistent()).
 		Subcommands(sub)
 
 	if code, _, stderr := runCaptured(cmd, "sub", "--where"); code != 0 {
@@ -2149,7 +2313,7 @@ func TestNegationCollision(t *testing.T) {
 		{
 			name: "GeneratedAgainstAncestor",
 			cmd: NewCommand("root", "").
-				Flags(Bool(new(bool), "cache", false, "")).
+				Flags(Bool(new(bool), "cache", false, "").Persistent()).
 				Subcommands(NewCommand("sub", "").Flags(
 					Bool(new(bool), "no-cache", false, ""),
 				)),

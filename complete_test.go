@@ -11,7 +11,8 @@ import (
 // string with Choices, and a string with neither Choices nor a
 // CompleteFunc -- what a value falls back to when nothing can complete it.
 // It also declares two subcommands, one hidden, and mounts a further flag
-// on the visible one so descent can be asserted.
+// on the visible one so descent can be asserted. Only the boolean is
+// persistent, so descent drops the root's other flags.
 func compRootTree() *Command {
 	add := NewCommand("add", "").Flags(
 		String(new(string), "tags", "", "").Aliases("t"),
@@ -20,7 +21,7 @@ func compRootTree() *Command {
 	return NewCommand("app", "").
 		HelpFlag().
 		Flags(
-			Bool(new(bool), "verbose", false, "").Aliases("v"),
+			Bool(new(bool), "verbose", false, "").Aliases("v").Persistent(),
 			Bool(new(bool), "extra", false, "").Aliases("x").Hidden(),
 			String(new(string), "env", "", "").Aliases("e").
 				Choices("dev", "staging", "prod"),
@@ -95,12 +96,9 @@ func TestComplete(t *testing.T) {
 			ir.CompNoFileComp,
 		},
 		{
-			"AncestorFlagsStayOfferedAfterDescent",
+			"OnlyPersistentAncestorFlagsOfferedAfterDescent",
 			compRootTree, []string{"add"}, "-",
-			[]string{
-				"--env", "--help", "--name", "--tags", "--verbose",
-				"-e", "-h", "-n", "-t", "-v",
-			},
+			[]string{"--help", "--tags", "--verbose", "-h", "-t", "-v"},
 			ir.CompNoFileComp,
 		},
 		{
