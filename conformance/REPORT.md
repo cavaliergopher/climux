@@ -12,6 +12,7 @@ the feature.
 | [persistent-flags](#persistent-flags) | 2/2 | | | | | |
 | [optional-value](#optional-value) | | | | | 0/1 | |
 | [alias](#alias) | | 1/1 | 1/1 | 1/1 | | |
+| [constraints](#constraints) | | 1/1 | 2/2 | 1/1 | 1/1 | |
 | [external-subcommand](#external-subcommand) | 0/1 | 0/2 | | | | |
 | [env-routing](#env-routing) | 0/2 | | | | | |
 
@@ -66,6 +67,18 @@ A second name for a command, declared by the program or configured by the user.
 | conformant | `git st -uno` |  |
 | conformant | `gh co 123 --web` |  |
 | conformant | `cargo r --release -- --foo` | opaque-args |
+
+## constraints
+
+Two flags each legal alone are refused together. The handler checks them; see docs/adr/flag-constraints-belong-to-the-handler.md.
+
+| State | Command line | Depends on |
+| --- | --- | --- |
+| conformant | `gh pr create --editor --web` |  |
+| conformant | `gh pr create --web` |  |
+| conformant | `git commit -m fix -F msg.txt` |  |
+| conformant | `kubectl logs mypod --since=1h --since-time=2026-09-01T00:00:00Z` |  |
+| conformant | `cargo build --release --profile dev` |  |
 
 ## external-subcommand
 

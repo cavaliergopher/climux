@@ -3,6 +3,8 @@
 package gh
 
 import (
+	"context"
+
 	"go.hotsrc.dev/climux"
 	"go.hotsrc.dev/climux/conformance/internal/outcome"
 )
@@ -23,4 +25,19 @@ func checkoutCommand(name string) *climux.Command {
 		climux.Bool("force", "").Aliases("f"),
 		climux.String("NUMBER", "").Positional().Required(),
 	)
+}
+
+// PRCreate mimics '$ gh pr create', which refuses --editor beside --web.
+func PRCreate() *climux.Command {
+	editorFlag := climux.Bool("editor", "").Aliases("e")
+	webFlag := climux.Bool("web", "").Aliases("w")
+	createHandler := func(ctx context.Context, inv *climux.Invocation) error {
+		if !editorFlag.State().IsSet() || !webFlag.State().IsSet() {
+			return nil
+		}
+		return climux.NewArgumentErrorf(nil, inv.Cmd, nil, "", "specify only one of `--editor` or `--web`")
+	}
+	createCommand := climux.NewCommand("create", "").Flags(editorFlag, webFlag).HandleFunc(createHandler)
+	prCommand := climux.NewCommand("pr", "").Subcommands(createCommand)
+	return climux.NewCommand("gh", "").Subcommands(prCommand)
 }

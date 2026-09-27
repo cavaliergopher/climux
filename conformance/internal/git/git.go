@@ -62,3 +62,17 @@ func Log() *climux.Command {
 		),
 	)
 }
+
+// Commit mimics '$ git commit', which refuses -m beside -F.
+func Commit() *climux.Command {
+	messageFlag := climux.String("message", "").Aliases("m")
+	fileFlag := climux.String("file", "").Aliases("F")
+	commitHandler := func(ctx context.Context, inv *climux.Invocation) error {
+		if !messageFlag.State().IsSet() || !fileFlag.State().IsSet() {
+			return nil
+		}
+		return climux.NewArgumentErrorf(nil, inv.Cmd, nil, "", "options '-m' and '-F' cannot be used together")
+	}
+	commitCommand := climux.NewCommand("commit", "").Flags(messageFlag, fileFlag).HandleFunc(commitHandler)
+	return climux.NewCommand("git", "").Subcommands(commitCommand)
+}

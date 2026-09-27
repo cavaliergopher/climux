@@ -3,6 +3,8 @@
 package cargo
 
 import (
+	"context"
+
 	"go.hotsrc.dev/climux"
 	"go.hotsrc.dev/climux/conformance/internal/outcome"
 )
@@ -15,4 +17,18 @@ func Run() *climux.Command {
 			climux.Strings("ARGS", "").Positional().EndOfOptions(),
 		),
 	)
+}
+
+// Build mimics '$ cargo build', whose --release conflicts with --profile.
+func Build() *climux.Command {
+	releaseFlag := climux.Bool("release", "").Aliases("r")
+	profileFlag := climux.String("profile", "")
+	buildHandler := func(ctx context.Context, inv *climux.Invocation) error {
+		if !releaseFlag.State().IsSet() || !profileFlag.State().IsSet() {
+			return nil
+		}
+		return climux.NewArgumentErrorf(nil, inv.Cmd, nil, "", "the argument '--release' cannot be used with '--profile <PROFILE-NAME>'")
+	}
+	buildCommand := climux.NewCommand("build", "").Flags(releaseFlag, profileFlag).HandleFunc(buildHandler)
+	return climux.NewCommand("cargo", "").Subcommands(buildCommand)
 }

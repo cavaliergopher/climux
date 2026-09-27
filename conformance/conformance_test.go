@@ -23,6 +23,7 @@ var features = []Feature{
 	persistentFlags,
 	optionalValue,
 	alias,
+	constraints,
 	externalSubcommand,
 	envRouting,
 }

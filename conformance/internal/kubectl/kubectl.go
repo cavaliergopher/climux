@@ -3,6 +3,8 @@
 package kubectl
 
 import (
+	"context"
+
 	"go.hotsrc.dev/climux"
 	"go.hotsrc.dev/climux/conformance/internal/outcome"
 )
@@ -30,4 +32,19 @@ func Run() *climux.Command {
 			climux.Strings("ARGS", "").Positional(),
 		),
 	)
+}
+
+// Logs mimics '$ kubectl logs', which refuses --since beside --since-time.
+func Logs() *climux.Command {
+	podFlag := climux.String("POD", "").Positional().Required()
+	sinceFlag := climux.Duration("since", "")
+	sinceTimeFlag := climux.String("since-time", "")
+	logsHandler := func(ctx context.Context, inv *climux.Invocation) error {
+		if !sinceFlag.State().IsSet() || !sinceTimeFlag.State().IsSet() {
+			return nil
+		}
+		return climux.NewArgumentErrorf(nil, inv.Cmd, nil, "", "at most one of `sinceTime` or `sinceSeconds` may be specified")
+	}
+	logsCommand := climux.NewCommand("logs", "").Flags(podFlag, sinceFlag, sinceTimeFlag).HandleFunc(logsHandler)
+	return climux.NewCommand("kubectl", "").Subcommands(logsCommand)
 }
