@@ -313,8 +313,8 @@ a subcommand, and unknown after that. One marked Persistent stays valid
 beneath its command and means the same thing there, which is what a flag
 every command honors, such as --help, wants:
 
-	git remote --verbose add   // either kind
-	git remote add --verbose   // persistent only
+	app remote --verbose add   // either kind
+	app remote add --verbose   // persistent only
 
 An attached value is taken literally, so it may look like a flag: --flag=-5
 is negative five, where --flag -5 is a missing value. See
@@ -347,8 +347,8 @@ re-invokes the binary as the user types to ask what completes the word
 under the cursor. Flags declare what completes their value with Choices,
 for a fixed list, or Flag.Complete, for a callback computing candidates
 from the Invocation parsed so far -- what completes one flag's value often
-depends on another already given, as the ref argument to `git checkout`
-depends on which repository is checked out.
+depends on another already given, as a branch name depends on which
+repository an earlier flag named.
 
 Complete is the engine behind the reply, and answers the same
 question programmatically: given the command line so far and the word

@@ -13,7 +13,7 @@ import (
 // when no subcommand was named.
 func TestNewArgumentErrorfReportsLikeTheParser(t *testing.T) {
 	var plugin string
-	cmd := NewCommand("kubectl", "").
+	cmd := NewCommand("app", "").
 		Flags(String("PLUGIN", "").Bind(&plugin).Positional()).
 		Subcommands(NewCommand("get", "").HandleFunc(
 			func(ctx context.Context, inv *Invocation) error { return nil })).
@@ -28,7 +28,7 @@ func TestNewArgumentErrorfReportsLikeTheParser(t *testing.T) {
 	if got, want := code, ExitCodeUsage; got != want {
 		t.Errorf("exit code = %d, want %d", got, want)
 	}
-	if want := "Argument error: missing subcommand or PLUGIN\nUsage: kubectl "; !strings.HasPrefix(stderr, want) {
+	if want := "Argument error: missing subcommand or PLUGIN\nUsage: app "; !strings.HasPrefix(stderr, want) {
 		t.Errorf("stderr = %q, want it to begin %q", stderr, want)
 	}
 

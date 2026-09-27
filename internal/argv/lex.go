@@ -233,9 +233,9 @@ func (lx *lexer) lexOperand(tok string, idx int) {
 	// positionals: a word naming a subcommand dispatches, and any other
 	// word binds the first positional. Once one has bound, the command is
 	// filling its positionals, so a later word that happens to name a
-	// subcommand is data -- "docker compose run" hands run to compose --
-	// until every positional is full. Dispatch starts the choice over:
-	// the next word is the subcommand's first operand.
+	// subcommand is data -- "app backup run" hands run to the backup
+	// plugin -- until every positional is full. Dispatch starts the
+	// choice over: the next word is the subcommand's first operand.
 	//
 	// Ending options does not change any of this. It stops "-" meaning
 	// an option, and nothing else.
@@ -451,7 +451,7 @@ func (lx *lexer) emitSet(o resolvedOption, value string, attached bool, argIndex
 		argIndex: argIndex,
 	})
 	// Option processing ends once a flag that says so has been given --
-	// a positional taking its token, or an option such as git's
+	// a positional taking its token, or an option such as
 	// --end-of-options -- which is the author's half of what a user
 	// writes as "--": everything after it is an operand.
 	if o.flag.EndOfOptions {

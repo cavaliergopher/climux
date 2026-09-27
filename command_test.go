@@ -908,7 +908,7 @@ func TestSiblingFlagReuse(t *testing.T) {
 	assertBool(t, true, pushForce)
 }
 
-// newRemoteTree returns git's "remote" shape: a command with a handler of
+// newRemoteTree returns a "remote" command with a handler of
 // its own and an "add" subcommand, each declaring a --verbose of its own.
 // remote's is persistent when persistent is set, and add's is omitted
 // then, since the name would collide.
@@ -920,7 +920,7 @@ func newRemoteTree(remoteVerbose, addVerbose *bool, persistent bool) *Command {
 	} else {
 		add.Flags(Bool("verbose", "").Bind(addVerbose))
 	}
-	return NewCommand("git", "").Subcommands(
+	return NewCommand("app", "").Subcommands(
 		NewCommand("remote", "").Flags(verbose).Subcommands(add),
 	)
 }
@@ -956,7 +956,7 @@ func TestLocalFlagScope(t *testing.T) {
 	})
 
 	t.Run("UnknownAfterDispatch", func(t *testing.T) {
-		tree := NewCommand("git", "").Subcommands(
+		tree := NewCommand("app", "").Subcommands(
 			NewCommand("remote", "").
 				Flags(Bool("verbose", "")).
 				Subcommands(NewCommand("add", "")),
@@ -966,7 +966,7 @@ func TestLocalFlagScope(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 		if got, want := humanMessage(err),
-			`unrecognized option: --verbose (an option of "git remote")`; got != want {
+			`unrecognized option: --verbose (an option of "app remote")`; got != want {
 			t.Errorf("message = %q, want %q", got, want)
 		}
 	})
@@ -1064,16 +1064,16 @@ func TestFirstOperandDecides(t *testing.T) {
 	noArgs := func() {
 		tr.steps, region, plugin, target, rest = nil, "", "", "", nil
 	}
-	// docker's shape: its own commands beside a plugin catch whose
-	// unbounded tail never fills.
-	docker := func() *Command {
-		return NewCommand("docker", "").
+	// Its own commands beside a plugin catch whose unbounded tail never
+	// fills.
+	tool := func() *Command {
+		return NewCommand("tool", "").
 			Flags(
 				String("PLUGIN", "").Bind(&plugin).Positional().EndOfOptions(),
 				Strings("ARG", "").Bind(&rest).Positional(),
 			).
 			Subcommands(NewCommand("run", "").HandleFunc(tr.handler("run", nil))).
-			HandleFunc(tr.handler("docker", nil))
+			HandleFunc(tr.handler("tool", nil))
 	}
 	// A bounded positional ahead of a subcommand, whose own first operand
 	// chooses again after dispatch.
@@ -1094,13 +1094,13 @@ func TestFirstOperandDecides(t *testing.T) {
 		steps string
 		check func(t *testing.T)
 	}{
-		{"FirstNamesASubcommand", docker, []string{"run"}, "run", nil},
-		{"FirstBindsThenANameIsData", docker, []string{"compose", "run", "web"}, "docker",
+		{"FirstNamesASubcommand", tool, []string{"run"}, "run", nil},
+		{"FirstBindsThenANameIsData", tool, []string{"backup", "run", "web"}, "tool",
 			func(t *testing.T) {
-				assertString(t, "compose", plugin)
+				assertString(t, "backup", plugin)
 				assertStrings(t, []string{"run", "web"}, rest)
 			}},
-		{"TerminatorLeavesTheChoice", docker, []string{"--", "run"}, "run", nil},
+		{"TerminatorLeavesTheChoice", tool, []string{"--", "run"}, "run", nil},
 		{"LookupResumesWhenFull", app, []string{"us-east-1", "deploy"}, "deploy",
 			func(t *testing.T) { assertString(t, "us-east-1", region) }},
 		{"DispatchStartsTheChoiceOver", app, []string{"us-east-1", "deploy", "canary"}, "canary", nil},
@@ -1252,7 +1252,7 @@ func TestUnboundCannotBeSet(t *testing.T) {
 
 // TestEndOfOptionsOnAnOption asserts that an option may end option
 // processing as a positional does, from where it is given: an unbound one
-// is a second spelling of "--", git's --end-of-options, and one taking a
+// is a second spelling of "--", such as --end-of-options, and one taking a
 // value starts the next program's arguments the way find's -exec does.
 func TestEndOfOptionsOnAnOption(t *testing.T) {
 	var verbose bool

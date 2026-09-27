@@ -327,8 +327,8 @@ const (
 // empty.
 //
 // inv is given because what completes a value often depends on flags
-// already given -- git checkout completing a ref depends on which
-// repository -r named, for instance -- and not on the word alone. Flags
+// already given -- a branch name completing from the repository -r
+// named, for instance -- and not on the word alone. Flags
 // named earlier on the command line are set on inv's command by the time
 // CompleteFunc is called; flags named later are not, since completion has
 // not read that far.

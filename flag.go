@@ -461,16 +461,16 @@ func (c *FlagBuilder[T]) Positional() *FlagBuilder[T] {
 // another program, so that program's flags reach it instead of being
 // read as this command's own:
 //
-//	String("IMAGE", usage).Positional().EndOfOptions()
+//	String("HOST", usage).Positional().EndOfOptions()
 //	Strings("ARG", usage).Positional()
 //
-//	docker run -it alpine ls -la   ->  -it is run's; IMAGE=alpine; ARG=["ls", "-la"]
+//	app exec -t web1 ls -la   ->  -t is exec's; HOST=web1; ARG=["ls", "-la"]
 //
 // An option may use it too, to give the user a second spelling of "--":
 //
 //	Unbound("end-of-options", usage).EndOfOptions()
 //
-//	git log --end-of-options --weird-branch   ->  REV=["--weird-branch"]
+//	app log --end-of-options --weird-branch   ->  REV=["--weird-branch"]
 func (c *FlagBuilder[T]) EndOfOptions() *FlagBuilder[T] {
 	c.endOfOptions = true
 	return c
