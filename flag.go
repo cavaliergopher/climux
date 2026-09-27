@@ -17,7 +17,6 @@ const (
 	defaultMaxNArgs = 1
 )
 
-// TODO: mutually exclusive flags?
 // TODO: error handling modes
 
 // Flag is a command line flag a command mounts, whatever type it binds.

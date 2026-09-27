@@ -345,10 +345,11 @@ an opt-in after v1 cannot.
 - Guideline 7 constrains the data model, not just the parser: an
   optional-valued flag cannot be added later without giving up grouping
   and the detached-value rule together.
-- Negated booleans (`--no-verbose`), flag aliases and mutually exclusive
-  sets are all within this dialect and none is settled here. They are
-  declarations on the data model that change help and validation, not
-  argv's shape. Negation is wanted rather than needed now that
+- Negated booleans (`--no-verbose`) and flag aliases are both within this
+  dialect and neither is settled here. They are declarations on the data
+  model that change help and validation, not argv's shape. Mutually
+  exclusive sets are left to the handler; see
+  `docs/adr/flag-constraints-belong-to-the-handler.md`. Negation is wanted rather than needed now that
   `--verbose=false` works; under the conforming rule it would have been the
   only way to turn a boolean off, and so a prerequisite for v1.
 - Conformance is claimable in the README, with the departures listed. That
