@@ -2,12 +2,15 @@
 // Each function returns a fresh tree, since a tree reads one command line.
 package kubectl
 
-import "go.hotsrc.dev/climux"
+import (
+	"go.hotsrc.dev/climux"
+	"go.hotsrc.dev/climux/conformance/internal/outcome"
+)
 
 // Exec mimics '$ kubectl exec'.
 func Exec() *climux.Command {
 	return climux.NewCommand("kubectl", "").Subcommands(
-		climux.NewCommand("exec", "").Flags(
+		climux.NewCommand("exec", "").HandleFunc(outcome.NoOpHandler).Flags(
 			climux.String("POD", "").Positional().Required(),
 			climux.String("container", "").Aliases("c"),
 			climux.Strings("COMMAND", "").Positional(),
@@ -18,7 +21,7 @@ func Exec() *climux.Command {
 // Run mimics '$ kubectl run'.
 func Run() *climux.Command {
 	return climux.NewCommand("kubectl", "").Subcommands(
-		climux.NewCommand("run", "").Flags(
+		climux.NewCommand("run", "").HandleFunc(outcome.NoOpHandler).Flags(
 			climux.String("NAME", "").Positional().Required(),
 			climux.String("image", ""),
 			// kubectl's --dry-run may be given bare; climux cannot yet

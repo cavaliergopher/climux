@@ -1,6 +1,7 @@
 package conformance_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"go.hotsrc.dev/climux"
+	"go.hotsrc.dev/climux/conformance/internal/outcome"
 	"go.hotsrc.dev/climux/ir"
 )
 
@@ -60,9 +62,10 @@ type Case struct {
 	// is pinned so that any change in behavior is seen.
 	Defect *Outcome
 
-	// Build returns a model of just enough of the tool to read Argv, for
-	// every case but a NotImplemented one. It is called once per run,
-	// since a tree reads one command line.
+	// Build returns a model of just enough of the tool to read and run
+	// Argv, for every case but a NotImplemented one. Its handlers may
+	// change the outcome; see package outcome. It is called once per
+	// run, since a tree reads one command line.
 	Build func() *climux.Command
 }
 
@@ -94,40 +97,22 @@ func (s State) String() string {
 	return fmt.Sprintf("State(%d)", int(s))
 }
 
-// An Outcome is what reading a command line meant, in terms that do not
-// depend on how climux exposes it.
-type Outcome struct {
-	Cmd       string   // full name of the command reached
-	Flags     Flags    // flags the command line or environment set
-	Interrupt string   // name of the interrupt given, if any
-	Err       *Failure // non-nil if the line was rejected
-}
-
-// Flags maps a flag's declared name to what it was set to.
-type Flags map[string]Bound
-
-// A Bound is the value a flag holds and where it came from. Values have
-// the type the flag was declared with: bool, int, string, []string. A
-// flag that binds no value holds true once given.
-type Bound struct {
-	Value  any
-	Source climux.Source
-}
-
-// A Failure is a command line the tool rejects. Arg is the argument it
-// blames, if any.
-type Failure struct {
-	Arg string
-}
+// The outcome types, named here so that cases read without a qualifier.
+type (
+	Outcome = outcome.Outcome
+	Flags   = outcome.Flags
+	Bound   = outcome.Bound
+	Failure = outcome.Failure
+)
 
 // arg is a value set on the command line.
-func arg(v any) Bound { return Bound{v, climux.SourceArgs} }
+func arg(v any) Bound { return Bound{Value: v, Source: climux.SourceArgs} }
 
 // env is a value set by an environment variable.
-func env(v any) Bound { return Bound{v, climux.SourceEnv} }
+func env(v any) Bound { return Bound{Value: v, Source: climux.SourceEnv} }
 
 // given is a flag that binds no value, named on the command line.
-func given() Bound { return Bound{true, climux.SourceArgs} }
+func given() Bound { return Bound{Value: true, Source: climux.SourceArgs} }
 
 // check reports a case whose declaration does not fit its State.
 func (c *Case) check() error {
@@ -176,7 +161,7 @@ func (c *Case) run(t *testing.T, f Feature) {
 	for k, v := range environ {
 		t.Setenv(k, v)
 	}
-	got := outcome(t, c.Build(), args[1:])
+	got := dispatch(t, c.Build(), args[1:])
 
 	if c.State == Conformant {
 		if !reflect.DeepEqual(got, c.Spec) {
@@ -193,9 +178,12 @@ func (c *Case) run(t *testing.T, f Feature) {
 	}
 }
 
-// outcome parses args against cmd and reports what that meant. A tree
-// that does not compile is a broken fixture rather than an outcome.
-func outcome(t *testing.T, cmd *climux.Command, args []string) Outcome {
+// dispatch parses args against cmd, runs the handler they reach, and
+// reports what that meant. The handler may change the outcome, as one
+// that redispatches does. A tree that does not compile, or a handler
+// failing other than on its arguments, is a broken fixture rather than
+// an outcome.
+func dispatch(t *testing.T, cmd *climux.Command, args []string) Outcome {
 	t.Helper()
 	inv, err := climux.Parse(cmd, args...)
 	if cfgErr := (*ir.ConfigError)(nil); errors.As(err, &cfgErr) {
@@ -231,9 +219,22 @@ func outcome(t *testing.T, cmd *climux.Command, args []string) Outcome {
 				if f.State.Get != nil {
 					v = f.State.Get()
 				}
-				o.Flags[f.Name] = Bound{v, f.State.Source}
+				o.Flags[f.Name] = Bound{Value: v, Source: f.State.Source}
 			}
 		}
+	}
+
+	// An interrupt's handler prints help or a version, which says
+	// nothing more about the line.
+	if inv.Interrupt != nil {
+		return o
+	}
+	err = inv.Cmd.Handler(outcome.NewContext(context.Background(), &o), inv)
+	if argErr := (*ir.ArgumentError)(nil); errors.As(err, &argErr) {
+		return Outcome{Err: &Failure{Arg: argErr.Arg}}
+	}
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
 	}
 	return o
 }

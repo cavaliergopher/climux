@@ -2,13 +2,18 @@
 // function returns a fresh tree, since a tree reads one command line.
 package git
 
-import "go.hotsrc.dev/climux"
+import (
+	"context"
+
+	"go.hotsrc.dev/climux"
+	"go.hotsrc.dev/climux/conformance/internal/outcome"
+)
 
 // Bisect mimics '$ git bisect run'.
 func Bisect() *climux.Command {
 	return climux.NewCommand("git", "").Subcommands(
 		climux.NewCommand("bisect", "").Subcommands(
-			climux.NewCommand("run", "").Flags(
+			climux.NewCommand("run", "").HandleFunc(outcome.NoOpHandler).Flags(
 				climux.Strings("CMD", "").Positional().NArgs(1, 0).EndOfOptions(),
 			),
 		),
@@ -19,20 +24,38 @@ func Bisect() *climux.Command {
 // "status -sb" in the user's config.
 func Status() *climux.Command {
 	return climux.NewCommand("git", "").Subcommands(
-		climux.NewCommand("status", "").Aliases("st").Flags(
-			climux.Bool("short", "").Aliases("s"),
-			climux.Bool("branch", "").Aliases("b"),
-			// git's -u may be given bare, which means "all". This one
-			// needs a value, which -uno gives it; see optional-value.
-			climux.String("untracked-files", "").Aliases("u"),
-		),
+		statusCommand("status").HandleFunc(outcome.NoOpHandler),
+		statusCommand("st").Hidden().HandleFunc(stHandler),
 	)
+}
+
+func statusCommand(name string) *climux.Command {
+	return climux.NewCommand(name, "").Flags(
+		climux.Bool("short", "").Aliases("s"),
+		climux.Bool("branch", "").Aliases("b"),
+		// git's -u may be given bare, which means "all". This one
+		// needs a value, which -uno gives it; see optional-value.
+		climux.String("untracked-files", "").Aliases("u"),
+	)
+}
+
+// stHandler redispatches to status with the -sb the alias carries,
+// which git reads as if it were typed.
+func stHandler(ctx context.Context, inv *climux.Invocation) error {
+	o := outcome.FromContext(ctx)
+	o.Cmd = "git status"
+	if o.Flags == nil {
+		o.Flags = outcome.Flags{}
+	}
+	o.Flags["short"] = outcome.Bound{Value: true, Source: climux.SourceArgs}
+	o.Flags["branch"] = outcome.Bound{Value: true, Source: climux.SourceArgs}
+	return nil
 }
 
 // Log mimics '$ git log'.
 func Log() *climux.Command {
 	return climux.NewCommand("git", "").Subcommands(
-		climux.NewCommand("log", "").Flags(
+		climux.NewCommand("log", "").HandleFunc(outcome.NoOpHandler).Flags(
 			climux.Bool("oneline", ""),
 			climux.Unbound("end-of-options", "").EndOfOptions(),
 			climux.Strings("REV", "").Positional(),

@@ -11,7 +11,7 @@ the feature.
 | [end-of-options](#end-of-options) | | 1/2 | | | | |
 | [persistent-flags](#persistent-flags) | 2/2 | | | | | |
 | [optional-value](#optional-value) | | | | | 0/1 | |
-| [alias](#alias) | | 0/1 | 1/1 | 1/1 | | |
+| [alias](#alias) | | 1/1 | 1/1 | 1/1 | | |
 | [external-subcommand](#external-subcommand) | 0/1 | 0/2 | | | | |
 | [env-routing](#env-routing) | 0/2 | | | | | |
 
@@ -63,7 +63,7 @@ A second name for a command, declared by the program or configured by the user.
 
 | State | Command line | Depends on |
 | --- | --- | --- |
-| known-bad | `git st -uno` |  |
+| conformant | `git st -uno` |  |
 | conformant | `gh co 123 --web` |  |
 | conformant | `cargo r --release -- --foo` | opaque-args |
 

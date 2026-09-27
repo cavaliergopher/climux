@@ -2,7 +2,10 @@
 // Each function returns a fresh tree, since a tree reads one command line.
 package docker
 
-import "go.hotsrc.dev/climux"
+import (
+	"go.hotsrc.dev/climux"
+	"go.hotsrc.dev/climux/conformance/internal/outcome"
+)
 
 // Run mimics '$ docker run'.
 func Run() *climux.Command {
@@ -11,7 +14,7 @@ func Run() *climux.Command {
 			climux.Bool("debug", "").Aliases("D").Persistent(),
 		).
 		Subcommands(
-			climux.NewCommand("run", "").Flags(
+			climux.NewCommand("run", "").HandleFunc(outcome.NoOpHandler).Flags(
 				climux.Bool("interactive", "").Aliases("i"),
 				climux.Bool("tty", "").Aliases("t"),
 				climux.Bool("rm", ""),

@@ -13,21 +13,12 @@ var alias = Feature{
 		{
 			// With alias.st = "status -sb" in the user's config.
 			Argv:   "git st -uno",
-			State:  KnownBad,
 			Source: "git/git git.c",
 			Spec: Outcome{
 				Cmd: "git status",
 				Flags: Flags{
 					"short":           arg(true),
 					"branch":          arg(true),
-					"untracked-files": arg("no"),
-				},
-			},
-			// st is declared as an alias of status, so the line reaches
-			// it without -sb. To solve: an alias that carries arguments.
-			Defect: &Outcome{
-				Cmd: "git status",
-				Flags: Flags{
 					"untracked-files": arg("no"),
 				},
 			},
