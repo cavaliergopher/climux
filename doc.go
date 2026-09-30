@@ -266,11 +266,12 @@ Run returns the exit code the program should terminate with:
 	2  the command line or the command tree was wrong, or there is no handler
 
 A handler names its own exit code by returning an error that implements
-ExitCoder. Exit and Exitf attach a code to an error — a handler reporting a
-misuse the parser cannot detect itself, such as two mutually exclusive
-flags, returns Exitf(ExitCodeUsage, ...) — and *exec.ExitError already
-implements ExitCoder, so the error from a child process can be returned
-unchanged to exit with its code.
+ExitCoder. Exit and Exitf attach a code to an error, and *exec.ExitError
+already implements ExitCoder, so the error from a child process can be
+returned unchanged to exit with its code. A handler reporting a misuse the
+parser cannot detect itself, such as two flags that cannot be given
+together, returns NewArgumentErrorf, which Run reports as it reports a
+parse error: with the command's usage, and exit code 2.
 
 # Command line flag syntax
 
