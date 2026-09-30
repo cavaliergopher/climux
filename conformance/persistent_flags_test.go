@@ -10,7 +10,7 @@ var persistentFlags = Feature{
 	Cases: []Case{
 		{
 			Argv:      "docker --debug run -it alpine ls -la",
-			Source:    "docker/cli@v29.8.2 cli/flags/options.go",
+			Source:    "docker/cli@v29.8.1 cli/flags/options.go",
 			DependsOn: []string{"opaque-args"},
 			Spec: Outcome{
 				Cmd: "docker run",
@@ -26,7 +26,7 @@ var persistentFlags = Feature{
 		},
 		{
 			Argv:      "docker run --debug -it alpine ls",
-			Source:    "docker/cli@v29.8.2 cmd/docker/docker.go",
+			Source:    "docker/cli@v29.8.1 cmd/docker/docker.go",
 			DependsOn: []string{"opaque-args"},
 			Spec: Outcome{
 				Cmd: "docker run",

@@ -31,7 +31,7 @@ var externalSubcommand = Feature{
 		{
 			Argv:      "docker --debug buildx build --push .",
 			State:     NotImplemented,
-			Source:    "docker/cli@v29.8.2 cli-plugins/manager/cobra.go",
+			Source:    "docker/cli@v29.8.1 cli-plugins/manager/cobra.go",
 			DependsOn: []string{"persistent-flags", "opaque-args"},
 			Spec: Outcome{
 				Cmd: "docker buildx",

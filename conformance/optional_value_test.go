@@ -13,7 +13,7 @@ var optionalValue = Feature{
 			// word as its value, so client lands in run's operands.
 			Argv:   "kubectl run nginx --image=nginx --dry-run client",
 			State:  KnownBad,
-			Source: "kubernetes/kubectl@v1.34 pkg/cmd/util/helpers.go",
+			Source: "kubernetes/kubectl@v0.34.0 pkg/cmd/util/helpers.go",
 			Spec: Outcome{
 				Cmd: "kubectl run",
 				Flags: Flags{

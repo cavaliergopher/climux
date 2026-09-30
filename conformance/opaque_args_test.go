@@ -13,7 +13,7 @@ var opaqueArgs = Feature{
 	Cases: []Case{
 		{
 			Argv:   "docker run alpine echo hi",
-			Source: "docker/cli@v29.8.2 cli/command/container/run.go",
+			Source: "docker/cli@v29.8.1 cli/command/container/run.go",
 			Spec: Outcome{
 				Cmd: "docker run",
 				Flags: Flags{
@@ -25,7 +25,7 @@ var opaqueArgs = Feature{
 		},
 		{
 			Argv:   "docker run -it --rm alpine ls -la",
-			Source: "docker/cli@v29.8.2 cli/command/container/run.go",
+			Source: "docker/cli@v29.8.1 cli/command/container/run.go",
 			Spec: Outcome{
 				Cmd: "docker run",
 				Flags: Flags{
@@ -42,7 +42,7 @@ var opaqueArgs = Feature{
 			// -v spells run's own --volume, but past IMAGE it is the
 			// container's.
 			Argv:   "docker run alpine -v",
-			Source: "docker/cli@v29.8.2 cli/command/container/run.go",
+			Source: "docker/cli@v29.8.1 cli/command/container/run.go",
 			Spec: Outcome{
 				Cmd: "docker run",
 				Flags: Flags{
@@ -56,7 +56,7 @@ var opaqueArgs = Feature{
 			// IMAGE already ended option processing, so docker forwards
 			// the -- as the container's first argument.
 			Argv:   "docker run alpine -- -v",
-			Source: "docker/cli@v29.8.2 cli/command/container/run.go",
+			Source: "docker/cli@v29.8.1 cli/command/container/run.go",
 			Spec: Outcome{
 				Cmd: "docker run",
 				Flags: Flags{
@@ -101,7 +101,7 @@ var opaqueArgs = Feature{
 		},
 		{
 			Argv:   "kubectl exec mypod -c app -- ls -la",
-			Source: "kubernetes/kubectl@v1.34 pkg/cmd/exec/exec.go",
+			Source: "kubernetes/kubectl@v0.34.0 pkg/cmd/exec/exec.go",
 			Spec: Outcome{
 				Cmd: "kubectl exec",
 				Flags: Flags{
@@ -117,7 +117,7 @@ var opaqueArgs = Feature{
 			// spelling rather than any one word.
 			Argv:   "kubectl exec mypod ls",
 			State:  KnownBad,
-			Source: "kubernetes/kubectl@v1.34 pkg/cmd/exec/exec.go",
+			Source: "kubernetes/kubectl@v0.34.0 pkg/cmd/exec/exec.go",
 			Spec:   Outcome{Err: &Failure{}},
 			// COMMAND binds ls as an ordinary operand. To solve: a
 			// positional that only binds after --, so a line reaching

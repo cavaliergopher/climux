@@ -37,7 +37,7 @@ var constraints = Feature{
 		},
 		{
 			Argv:   "kubectl logs mypod --since=1h --since-time=2026-09-01T00:00:00Z",
-			Source: "kubernetes/kubectl@v1.34 pkg/cmd/logs/logs.go",
+			Source: "kubernetes/kubectl@v0.34.0 pkg/cmd/logs/logs.go",
 			Spec:   Outcome{Err: &Failure{}},
 			Build:  kubectl.Logs,
 		},

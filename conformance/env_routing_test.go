@@ -8,7 +8,7 @@ var envRouting = Feature{
 			// With buildx installed, build is rewritten to buildx build.
 			Argv:   "docker build -t foo .",
 			State:  NotImplemented,
-			Source: "docker/cli@v29.8.2 cmd/docker/builder.go",
+			Source: "docker/cli@v29.8.1 cmd/docker/builder.go",
 			Spec: Outcome{
 				Cmd: "docker buildx build",
 				Flags: Flags{
@@ -20,7 +20,7 @@ var envRouting = Feature{
 		{
 			Argv:   "DOCKER_BUILDKIT=0 docker build -t foo .",
 			State:  NotImplemented,
-			Source: "docker/cli@v29.8.2 cmd/docker/builder.go",
+			Source: "docker/cli@v29.8.1 cmd/docker/builder.go",
 			Spec: Outcome{
 				Cmd: "docker build",
 				Flags: Flags{
